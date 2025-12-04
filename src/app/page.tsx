@@ -1,65 +1,139 @@
-import Image from "next/image";
+// src/app/page.tsx
+'use client';
+
+import { useState, useMemo } from 'react';
+import { runSimulation } from './actions';
+import { calculateScore } from '@/lib/scoring';
+import type { GameConfig, GameResult, ReplayFrame } from '@/lib/types';
+import { ReplayContainer } from '@/components/ReplayContainer';
+import { RankingTable } from '@/components/RankingTable';
+
+// --- Config ---
+const MODELS_TO_TEST = [
+  'gpt-4o',
+  'gpt-4-turbo',
+  // 'claude-3-5-sonnet-20240620', // Add models supported by your provider
+];
+
+const GAME_CONFIG: GameConfig = {
+  rows: 8,
+  cols: 8,
+  mineCount: 10,
+};
+
+const OUTCOME_ORDER: Record<GameResult['outcome'], number> = {
+  win: 1,
+  stuck: 2,
+  loss: 3,
+  error: 4,
+  playing: 5,
+};
+
+type SimulationData = {
+  result: Omit<GameResult, 'score' | 'totalSafe' | 'minesHit'> & { minesHit: 0 | 1 };
+  replayLog: ReplayFrame[];
+};
 
 export default function Home() {
+  const [simulations, setSimulations] = useState<SimulationData[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleStartBattle = async () => {
+    setIsLoading(true);
+    setError(null);
+    setSimulations([]);
+
+    try {
+      // The runSimulation action needs to be updated to return minesHit
+      // For now, we'll assume it's part of the result object.
+      // This will require a small change in `actions.ts`.
+      const results = await Promise.all(
+        MODELS_TO_TEST.map(modelId => runSimulation(modelId, GAME_CONFIG))
+      );
+      // @ts-ignore // Assuming the action is updated
+      setSimulations(results);
+    } catch (err) {
+      console.error('Simulation failed:', err);
+      setError(err instanceof Error ? err.message : 'An unknown error occurred.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const rankedResults = useMemo((): GameResult[] => {
+    if (simulations.length === 0) return [];
+
+    const fullResults: GameResult[] = simulations.map(({ result, replayLog }) => {
+      const lastFrame = replayLog[replayLog.length - 1];
+      const minesHit = lastFrame.boardState.flat().filter(c => c.isMine && c.isRevealed).length > 0 ? 1 : 0;
+      
+      const score = calculateScore({
+        outcome: result.outcome,
+        safeRevealed: result.safeRevealed,
+        moves: result.moves,
+        minesHit: minesHit,
+        config: GAME_CONFIG,
+      });
+
+      return {
+        ...result,
+        score,
+        totalSafe: GAME_CONFIG.rows * GAME_CONFIG.cols - GAME_CONFIG.mineCount,
+        minesHit,
+      };
+    });
+
+    return fullResults.sort((a, b) => {
+      // 1. Score (desc)
+      if (a.score !== b.score) return b.score - a.score;
+      // 2. Outcome priority
+      if (OUTCOME_ORDER[a.outcome] !== OUTCOME_ORDER[b.outcome]) {
+        return OUTCOME_ORDER[a.outcome] - OUTCOME_ORDER[b.outcome];
+      }
+      // 3. Moves (asc)
+      if (a.moves !== b.moves) return a.moves - b.moves;
+      // 4. Duration (asc)
+      return a.durationMs - b.durationMs;
+    });
+  }, [simulations]);
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <main className="flex min-h-screen flex-col items-center p-8 bg-gray-50 text-gray-800">
+      <div className="w-full max-w-7xl">
+        <header className="text-center mb-8">
+          <h1 className="text-4xl font-bold tracking-tight text-gray-900">
+            Minesweeper Battle
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="mt-2 text-lg text-gray-600">
+            LLM agents compete on the same board to solve Minesweeper.
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+        </header>
+
+        <div className="flex justify-center mb-8">
+          <button
+            onClick={handleStartBattle}
+            disabled={isLoading}
+            className="px-6 py-3 font-semibold text-white bg-blue-600 rounded-lg shadow-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+            {isLoading ? 'Simulating...' : 'Start Battle'}
+          </button>
         </div>
-      </main>
-    </div>
+
+        {error && (
+          <div className="text-center text-red-500 bg-red-100 p-4 rounded-lg">
+            <strong>Error:</strong> {error}
+          </div>
+        )}
+
+        {rankedResults.length > 0 && <RankingTable results={rankedResults} />}
+
+        {simulations.length > 0 && (
+          <div className="mt-12">
+            <ReplayContainer simulations={simulations as any} />
+          </div>
+        )}
+      </div>
+    </main>
   );
 }
