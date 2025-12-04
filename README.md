@@ -1,17 +1,71 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Minesweeper Battle
+
+AI Gateway Hackathon
+
+Models play Minesweeper on the **same hidden board**.  
+Each model is an agent that chooses cells to reveal; the backend simulates the game and the UI replays their runs side-by-side.
+
+Deployed on Vercel and powered by **AI Gateway** + **Vercel AI SDK**.
+
+---
+
+## How it works
+
+- One shared board: `rows × cols` with `mineCount` hidden mines.
+- For each model:
+  - The backend sends the **current visible board** and rules.
+  - The model returns a JSON move: `{"action":"reveal"|"flag","row":number,"col":number,...}`.
+  - The engine applies the move, reveals cells, and updates the visible board.
+  - This repeats until the model **wins, hits a mine, gets stuck or errors**.
+- The frontend displays all models’ boards in parallel, with a **replay timeline**.
+
+This is a **model evaluation game**:
+
+- Same environment, different strategies.
+- Fully automatic scoring.
+- Designed for quick, visual comparisons.
+
+---
+
+## Scoring & ranking
+
+For each model run:
+
+- `safeRevealed` – number of non-mine cells revealed.
+- `totalSafe` – total non-mine cells on the board.
+- `minesHit` – 0 or 1.
+- `moves` – total moves made.
+- `outcome` – `win | loss | stuck | error`.
+
+Round score:
+
+```text
+if outcome === "win":
+  score = 100 * (safeRevealed / totalSafe) - 0.5 * (moves - 1)
+else:
+  score = 100 * (safeRevealed / totalSafe) - 10 * minesHit
+```
+
+Ranking for a round:
+
+1. score (desc)
+2. outcome priority: win > stuck > loss > error
+3. moves (asc)
+4. durationMs (asc)
+
+## Tech stack
+
+- Frontend: Next.js (App Router) + TypeScript + Tailwind
+- AI: Vercel AI SDK + AI Gateway (OpenAI, Anthropic, etc.)
+- Backend: Next.js API routes (server actions) for simulation
+- Deployment: Vercel
 
 ## Getting Started
 
 First, run the development server:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
 pnpm dev
-# or
-bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
@@ -20,17 +74,24 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-## Learn More
+### Game rules (for models)
 
-To learn more about Next.js, take a look at the following resources:
+- Each turn, a model must output only JSON:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```json
+{
+  "action": "reveal",
+  "row": 3,
+  "col": 5,
+  "reasoning": "short natural language explanation"
+}
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- Rows/cols are 0-based.
+- You may only act on currently hidden cells.
+- reveal:
+  - If safe → shows number of adjacent mines (0–8), with flood-fill of zero areas.
+  - If mine → game over (loss).
+- flag (optional) toggles a flag without revealing.
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+If JSON is invalid or move is illegal, the game may end with `outcome = "error"` or `outcome = "stuck"`.
