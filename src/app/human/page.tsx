@@ -1,7 +1,6 @@
 'use client'
 
 import { useReducer, useMemo, useState, useEffect } from 'react'
-import Link from 'next/link'
 import { BoardGrid } from '@/components/BoardGrid'
 import { Button } from '@/components/ui/Button'
 import { createBoard, revealCell, flagCell } from '@/lib/minesweeper'
@@ -147,17 +146,7 @@ export default function HumanPage() {
   const formattedTime = new Date(time * 1000).toISOString().substr(14, 5)
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-50">
-      <header className="flex items-center justify-between border-b border-slate-800 px-8 py-4">
-        <Link href="/" className="flex items-center gap-2 text-xl font-bold">
-          <Bomb className="text-blue-500" />
-          Minesweeper LLM Arena
-        </Link>
-        <Button variant="primary" onClick={handleNewGame}>
-          New Game
-        </Button>
-      </header>
-
+    <>
       <main className="mx-auto max-w-7xl p-4 md:p-8">
         <div className="flex w-full justify-center gap-8">
           {/* Left Column */}
@@ -257,7 +246,7 @@ export default function HumanPage() {
             </span>
           </div>
           <div className="flex justify-center gap-4">
-            <Button variant="secondary" href="/">
+            <Button variant="secondary" href="/setup">
               Quit
             </Button>
             <Button variant="primary" onClick={handleNewGame}>
@@ -266,6 +255,6 @@ export default function HumanPage() {
           </div>
         </div>
       </Modal>
-    </div>
+    </>
   )
 }

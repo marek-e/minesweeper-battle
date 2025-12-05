@@ -36,3 +36,5 @@ export type GameConfig = {
   cols: number
   mineCount: number
 }
+
+export type Difficulty = 'beginner' | 'intermediate' | 'expert'
