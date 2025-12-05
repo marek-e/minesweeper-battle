@@ -3,9 +3,19 @@
 import { useReducer, useMemo, useState, useEffect } from "react";
 import Link from "next/link";
 import { BoardGrid } from "@/components/BoardGrid";
+import { Button } from "@/components/Button";
 import { createBoard, revealCell, flagCell } from "@/lib/minesweeper";
 import type { BoardState, GameConfig, GameOutcome } from "@/lib/types";
-import { Flag, Eye, RefreshCw, X, Bomb, ChevronDown } from "lucide-react";
+import {
+  Flag,
+  Eye,
+  RefreshCw,
+  X,
+  Bomb,
+  ChevronDown,
+  Trophy,
+} from "lucide-react";
+import { Modal } from "@/components/Modal";
 
 const DIFFICULTIES: Record<string, GameConfig> = {
   Easy: { rows: 9, cols: 9, mineCount: 10 },
@@ -99,7 +109,7 @@ const StatBox = ({
   label: string;
   value: React.ReactNode;
 }) => (
-  <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 text-center">
+  <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 text-left">
     <div className="text-sm text-slate-400 mb-1">{label}</div>
     <div className="text-3xl font-bold font-mono">{value}</div>
   </div>
@@ -113,6 +123,7 @@ export default function HumanPage() {
   );
   const [time, setTime] = useState(0);
   const [activeTool, setActiveTool] = useState<"reveal" | "flag">("reveal");
+  const [modalDismissed, setModalDismissed] = useState(false);
 
   useEffect(() => {
     dispatch({
@@ -129,12 +140,17 @@ export default function HumanPage() {
     return () => clearInterval(timer);
   }, [state.outcome, state.board]);
 
+  // Derive modal from outcome - no effect needed
+  const modal =
+    !modalDismissed && state.outcome !== "playing" ? state.outcome : null;
+
   const handleNewGame = () => {
     dispatch({
       type: "NEW_GAME",
       payload: { config: DIFFICULTIES[difficulty] },
     });
     setTime(0);
+    setModalDismissed(false);
   };
 
   const handleCellClick = (row: number, col: number) => {
@@ -150,32 +166,27 @@ export default function HumanPage() {
     [state.config]
   );
   const displayBoard = state.board ?? emptyBoard;
+  const formattedTime = new Date(time * 1000).toISOString().substr(14, 5);
 
   return (
     <div className="bg-slate-900 min-h-screen text-slate-50">
-      <header className="flex items-center justify-between p-4 border-b border-slate-800">
+      <header className="flex items-center justify-between px-8 py-4 border-b border-slate-800">
         <Link href="/" className="text-xl font-bold flex items-center gap-2">
           <Bomb className="text-blue-500" />
           Minesweeper LLM Arena
         </Link>
-        <button
-          onClick={handleNewGame}
-          className="px-4 py-2 font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
-        >
+        <Button variant="primary" onClick={handleNewGame}>
           New Game
-        </button>
+        </Button>
       </header>
 
-      <main className="p-4 md:p-8">
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-8">
+      <main className="p-4 md:p-8 max-w-7xl mx-auto">
+        <div className="flex w-full gap-8 justify-center">
           {/* Left Column */}
-          <div className="flex flex-col items-center">
-            <h1 className="text-3xl font-bold mb-6">Human Play Mode</h1>
-            <div className="grid grid-cols-3 gap-4 mb-6 w-full max-w-md">
-              <StatBox
-                label="Time"
-                value={new Date(time * 1000).toISOString().substr(14, 5)}
-              />
+          <div className="flex flex-col items-start gap-8">
+            <h1 className="text-[2rem] font-bold">Human Play Mode</h1>
+            <div className="grid grid-cols-3 gap-4 w-full">
+              <StatBox label="Time" value={formattedTime} />
               <StatBox
                 label="Moves"
                 value={String(state.moves).padStart(2, "0")}
@@ -193,7 +204,8 @@ export default function HumanPage() {
           </div>
 
           {/* Right Column (Sidebar) */}
-          <aside className="w-full lg:w-64 space-y-6">
+          <aside className="w-full lg:w-64 flex flex-col gap-8">
+            <div className="h-[48px]"></div>
             <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
               <label
                 htmlFor="difficulty"
@@ -221,26 +233,20 @@ export default function HumanPage() {
                 Controls
               </h3>
               <div className="space-y-2">
-                <button
+                <Button
+                  fullWidth
+                  active={activeTool === "reveal"}
                   onClick={() => setActiveTool("reveal")}
-                  className={`w-full flex items-center justify-center gap-2 px-4 py-2 rounded-md transition-colors ${
-                    activeTool === "reveal"
-                      ? "bg-blue-600 text-white"
-                      : "bg-slate-800 hover:bg-slate-700"
-                  }`}
                 >
                   <Eye size={16} /> Reveal
-                </button>
-                <button
+                </Button>
+                <Button
+                  fullWidth
+                  active={activeTool === "flag"}
                   onClick={() => setActiveTool("flag")}
-                  className={`w-full flex items-center justify-center gap-2 px-4 py-2 rounded-md transition-colors ${
-                    activeTool === "flag"
-                      ? "bg-blue-600 text-white"
-                      : "bg-slate-800 hover:bg-slate-700"
-                  }`}
                 >
                   <Flag size={16} /> Flag
-                </button>
+                </Button>
               </div>
             </div>
 
@@ -249,23 +255,54 @@ export default function HumanPage() {
                 Actions
               </h3>
               <div className="space-y-2">
-                <button
-                  onClick={handleNewGame}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-slate-800 hover:bg-slate-700 transition-colors"
-                >
+                <Button fullWidth onClick={handleNewGame}>
                   <RefreshCw size={16} /> Restart
-                </button>
-                <Link
-                  href="/"
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-red-900/50 hover:bg-red-900/80 text-red-300 transition-colors"
-                >
+                </Button>
+                <Button fullWidth variant="danger" href="/">
                   <X size={16} /> Quit
-                </Link>
+                </Button>
               </div>
             </div>
           </aside>
         </div>
       </main>
+      <Modal
+        isOpen={modal !== null}
+        onClose={() => setModalDismissed(true)}
+        title={modal === "win" ? "You Win!" : "Game Over"}
+      >
+        <div className="text-center">
+          <div className="flex justify-center text-6xl mb-4">
+            {modal === "win" ? (
+              <Trophy className="text-yellow-400" />
+            ) : (
+              <Bomb className="text-red-500" />
+            )}
+          </div>
+          <p className="text-slate-300 mb-6">
+            {modal === "win"
+              ? "Congratulations! You cleared the board."
+              : "You hit a mine!"}
+          </p>
+          <div className="flex justify-center gap-4 text-slate-400 mb-8">
+            <span>
+              Time:{" "}
+              <span className="font-bold text-white">{formattedTime}</span>
+            </span>
+            <span>
+              Moves: <span className="font-bold text-white">{state.moves}</span>
+            </span>
+          </div>
+          <div className="flex justify-center gap-4">
+            <Button variant="secondary" href="/">
+              Quit
+            </Button>
+            <Button variant="primary" onClick={handleNewGame}>
+              Play Again
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
