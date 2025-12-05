@@ -1,40 +1,38 @@
-// src/lib/types.ts
-
-export type GameOutcome = 'win' | 'loss' | 'stuck' | 'error' | 'playing';
+export type GameOutcome = 'win' | 'loss' | 'stuck' | 'error' | 'playing'
 
 export type CellState = {
-  row: number;
-  col: number;
-  isMine: boolean;
-  isRevealed: boolean;
-  isFlagged: boolean;
-  adjacentMines: number; // 0-8
-};
+  row: number
+  col: number
+  isMine: boolean
+  isRevealed: boolean
+  isFlagged: boolean
+  adjacentMines: number // 0-8
+}
 
-export type BoardState = CellState[][];
+export type BoardState = CellState[][]
 
 export type GameResult = {
-  modelId: string;
-  outcome: GameOutcome;
-  score: number;
-  moves: number;
-  durationMs: number;
-  safeRevealed: number;
-  totalSafe: number;
-  minesHit: 0 | 1;
-};
+  modelId: string
+  outcome: GameOutcome
+  score: number
+  moves: number
+  durationMs: number
+  safeRevealed: number
+  totalSafe: number
+  minesHit: 0 | 1
+}
 
 export type ReplayFrame = {
-  boardState: BoardState;
+  boardState: BoardState
   move: {
-    action: 'reveal' | 'flag';
-    row: number;
-    col: number;
-  } | null;
-};
+    action: 'reveal' | 'flag'
+    row: number
+    col: number
+  } | null
+}
 
 export type GameConfig = {
-  rows: number;
-  cols: number;
-  mineCount: number;
-};
+  rows: number
+  cols: number
+  mineCount: number
+}
