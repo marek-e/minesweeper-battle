@@ -11,7 +11,7 @@ const variantStyles: Record<Variant, string> = {
 }
 
 const baseStyles =
-  'inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md transition-colors cursor-pointer'
+  'inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed'
 
 type ButtonBaseProps = {
   variant?: Variant

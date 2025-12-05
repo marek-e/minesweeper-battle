@@ -1,17 +1,27 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
+import { useQueryStates } from 'nuqs'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/Button'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, Loader2 } from 'lucide-react'
 import { Difficulty, GameConfig } from '@/lib/types'
+import { gameSearchParams } from '@/lib/searchParams'
+import { createBattle } from '@/lib/api'
+import {
+  AUTHORIZED_MODELS,
+  MAX_ROWS,
+  MAX_COLS,
+  MAX_MINES,
+  AuthorizedModel,
+} from '@/lib/battleConfig'
 
-const LLM_PLAYERS = [
-  { id: 'gpt-4-turbo', name: 'GPT-4 Turbo' },
-  { id: 'claude-3-sonnet', name: 'Claude 3 Sonnet' },
-  { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro' },
-  { id: 'llama-3-70b', name: 'Llama 3 70B' },
-  { id: 'deepseek-r1', name: 'DeepSeek R1' },
-]
+const MODEL_NAMES: Record<AuthorizedModel, string> = {
+  'gpt-5-mini': 'GPT-5 Mini',
+  'gemini-2.5-flash': 'Gemini 2.5 Flash',
+  'claude-3.7-sonnet': 'Claude 3.7 Sonnet',
+  'grok-code-fast-1': 'Grok Code Fast 1',
+}
 
 const DIFFICULTIES: Record<Difficulty, GameConfig> = {
   beginner: { rows: 9, cols: 9, mineCount: 10 },
@@ -22,17 +32,21 @@ const DIFFICULTIES: Record<Difficulty, GameConfig> = {
 const InputField = ({
   label,
   id,
+  max,
   ...props
 }: {
   label: string
+  max?: number
 } & React.ComponentProps<'input'>) => (
   <div className="flex flex-col gap-2">
     <label htmlFor={id} className="text-sm text-slate-400">
       {label}
+      {max && <span className="ml-1 text-slate-500">(max: {max})</span>}
     </label>
     <input
       id={id}
       type="number"
+      max={max}
       className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
       {...props}
     />
@@ -69,23 +83,41 @@ const CheckboxCard = ({
   </label>
 )
 
-export default function SetupPage() {
-  const [rows, setRows] = useState(16)
-  const [cols, setCols] = useState(16)
-  const [mineCount, setMineCount] = useState(40)
-  const [selectedModels, setSelectedModels] = useState<string[]>(['gpt-4-turbo', 'gemini-1.5-pro'])
+function SetupContent() {
+  const router = useRouter()
+  const [config, setConfig] = useQueryStates(gameSearchParams)
+  const [isStarting, setIsStarting] = useState(false)
+
+  const { rows, cols, mineCount, models } = config
 
   const handleDifficultyClick = (difficulty: Difficulty) => {
-    const config = DIFFICULTIES[difficulty]
-    setRows(config.rows)
-    setCols(config.cols)
-    setMineCount(config.mineCount)
+    const preset = DIFFICULTIES[difficulty]
+    setConfig({
+      rows: preset.rows,
+      cols: preset.cols,
+      mineCount: preset.mineCount,
+    })
   }
 
   const handleModelToggle = (modelId: string, isSelected: boolean) => {
-    setSelectedModels((prev) =>
-      isSelected ? [...prev, modelId] : prev.filter((id) => id !== modelId)
-    )
+    setConfig({
+      models: isSelected ? [...models, modelId] : models.filter((id) => id !== modelId),
+    })
+  }
+
+  const handleStartGame = async () => {
+    if (models.length === 0 || isStarting) return
+
+    setIsStarting(true)
+
+    try {
+      const { battleId } = await createBattle({ rows, cols, mineCount }, models)
+      router.push(`/arena?battleId=${battleId}`)
+    } catch (error) {
+      console.error('Error starting battle:', error)
+      alert(error instanceof Error ? error.message : 'Failed to start battle')
+      setIsStarting(false)
+    }
   }
 
   return (
@@ -100,20 +132,23 @@ export default function SetupPage() {
             <InputField
               label="Rows"
               id="rows"
+              max={MAX_ROWS}
               value={rows}
-              onChange={(e) => setRows(Number(e.target.value))}
+              onChange={(e) => setConfig({ rows: Number(e.target.value) })}
             />
             <InputField
               label="Columns"
               id="cols"
+              max={MAX_COLS}
               value={cols}
-              onChange={(e) => setCols(Number(e.target.value))}
+              onChange={(e) => setConfig({ cols: Number(e.target.value) })}
             />
             <InputField
               label="Number of Mines"
               id="mineCount"
+              max={MAX_MINES}
               value={mineCount}
-              onChange={(e) => setMineCount(Number(e.target.value))}
+              onChange={(e) => setConfig({ mineCount: Number(e.target.value) })}
             />
           </div>
           <div className="mt-2 flex items-center gap-4">
@@ -143,24 +178,51 @@ export default function SetupPage() {
             <p className="text-slate-400">Choose one or more models to compare.</p>
           </div>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {LLM_PLAYERS.map((player) => (
+            {AUTHORIZED_MODELS.map((modelId) => (
               <CheckboxCard
-                key={player.id}
-                id={player.id}
-                label={player.name}
-                checked={selectedModels.includes(player.id)}
-                onChange={(isChecked) => handleModelToggle(player.id, isChecked)}
+                key={modelId}
+                id={modelId}
+                label={MODEL_NAMES[modelId] || modelId}
+                checked={models.includes(modelId)}
+                onChange={(isChecked) => handleModelToggle(modelId, isChecked)}
               />
             ))}
           </div>
         </section>
 
         <div className="mt-4 flex justify-end">
-          <Button variant="primary" href="/arena">
-            Start Game <ArrowRight size={16} />
+          <Button
+            variant="primary"
+            onClick={handleStartGame}
+            disabled={models.length === 0 || isStarting}
+          >
+            {isStarting ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Starting...
+              </>
+            ) : (
+              <>
+                Start Game <ArrowRight size={16} />
+              </>
+            )}
           </Button>
         </div>
       </div>
     </main>
+  )
+}
+
+export default function SetupPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex flex-col items-center justify-center p-8">
+          <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+        </main>
+      }
+    >
+      <SetupContent />
+    </Suspense>
   )
 }

@@ -1,14 +1,67 @@
 import type { BoardState, GameConfig } from './types'
 
 /**
+ * Simple seeded random number generator (mulberry32)
+ */
+function seededRandom(seed: number): () => number {
+  return function () {
+    let t = (seed += 0x6d2b79f5)
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+/**
+ * Generates mine positions deterministically based on a seed.
+ * @param config - The game configuration
+ * @param seed - Random seed for deterministic generation
+ * @param excludedCell - Optional cell to exclude from mine placement (first click)
+ * @returns Array of [row, col] mine positions
+ */
+export function generateMinePositions(
+  config: GameConfig,
+  seed: number,
+  excludedCell?: { row: number; col: number }
+): [number, number][] {
+  const { rows, cols, mineCount } = config
+  const random = seededRandom(seed)
+
+  // Create all possible positions
+  const allPositions: [number, number][] = []
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      // Exclude the first click cell and its neighbors
+      if (excludedCell) {
+        const rowDiff = Math.abs(row - excludedCell.row)
+        const colDiff = Math.abs(col - excludedCell.col)
+        if (rowDiff <= 1 && colDiff <= 1) continue
+      }
+      allPositions.push([row, col])
+    }
+  }
+
+  // Shuffle using Fisher-Yates with seeded random
+  for (let i = allPositions.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1))
+    ;[allPositions[i], allPositions[j]] = [allPositions[j], allPositions[i]]
+  }
+
+  // Take first mineCount positions
+  return allPositions.slice(0, mineCount)
+}
+
+/**
  * Creates a new Minesweeper board.
  * @param config - The game configuration: rows, cols, and mineCount.
  * @param firstClick - Optional: The first cell clicked, to ensure it's not a mine.
+ * @param minePositions - Optional: Pre-defined mine positions for deterministic boards.
  * @returns The initial board state.
  */
 export function createBoard(
   config: GameConfig,
-  firstClick?: { row: number; col: number }
+  firstClick?: { row: number; col: number },
+  minePositions?: [number, number][]
 ): BoardState {
   const { rows, cols, mineCount } = config
   const board: BoardState = Array.from({ length: rows }, (_, row) =>
@@ -22,18 +75,27 @@ export function createBoard(
     }))
   )
 
-  // Place mines randomly, avoiding the first click location
-  let minesPlaced = 0
-  const excludedIndex = firstClick ? firstClick.row * cols + firstClick.col : -1
+  // Use pre-defined mine positions if provided
+  if (minePositions) {
+    for (const [row, col] of minePositions) {
+      if (row >= 0 && row < rows && col >= 0 && col < cols) {
+        board[row][col].isMine = true
+      }
+    }
+  } else {
+    // Place mines randomly, avoiding the first click location
+    let minesPlaced = 0
+    const excludedIndex = firstClick ? firstClick.row * cols + firstClick.col : -1
 
-  while (minesPlaced < mineCount) {
-    const rowIndex = Math.floor(Math.random() * rows)
-    const colIndex = Math.floor(Math.random() * cols)
-    const cellIndex = rowIndex * cols + colIndex
+    while (minesPlaced < mineCount) {
+      const rowIndex = Math.floor(Math.random() * rows)
+      const colIndex = Math.floor(Math.random() * cols)
+      const cellIndex = rowIndex * cols + colIndex
 
-    if (!board[rowIndex][colIndex].isMine && cellIndex !== excludedIndex) {
-      board[rowIndex][colIndex].isMine = true
-      minesPlaced++
+      if (!board[rowIndex][colIndex].isMine && cellIndex !== excludedIndex) {
+        board[rowIndex][colIndex].isMine = true
+        minesPlaced++
+      }
     }
   }
 
