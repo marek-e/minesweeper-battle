@@ -4,52 +4,14 @@ import { useEffect, useState, useCallback, Suspense } from 'react'
 import { Loader2 } from 'lucide-react'
 import { ReplayPlayer } from '@/components/ReplayPlayer'
 import { PlaybackControls } from '@/components/PlaybackControls'
-import type { GameResult, BoardState } from '@/lib/types'
 import { Button } from '@/components/ui/Button'
-
-type BattleData = {
-  id: string
-  config: { rows: number; cols: number; mineCount: number }
-  models: string[]
-  status: string
-  rankings: GameResult[] | null
-  frames: Record<string, Array<{ boardState: BoardState }>>
-  results: Record<string, GameResult>
-}
+import { useBattle } from '@/hooks/useBattle'
 
 function ReplayContent({ battleId }: { battleId: string }) {
-  const [battleData, setBattleData] = useState<BattleData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const { data: battleData, isLoading, error: queryError } = useBattle(battleId)
   const [currentFrame, setCurrentFrame] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
   const [speed, setSpeed] = useState(1)
-
-  useEffect(() => {
-    if (!battleId) {
-      queueMicrotask(() => {
-        setError('No battle ID provided')
-        setLoading(false)
-      })
-      return
-    }
-
-    fetch(`/api/battles/${battleId}`)
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error('Battle not found')
-        }
-        return res.json()
-      })
-      .then((data) => {
-        setBattleData(data)
-        setLoading(false)
-      })
-      .catch((err) => {
-        setError(err.message || 'Failed to load battle')
-        setLoading(false)
-      })
-  }, [battleId])
 
   const maxFrames = battleData
     ? Math.max(...battleData.models.map((modelId) => battleData.frames[modelId]?.length || 0))
@@ -102,7 +64,7 @@ function ReplayContent({ battleId }: { battleId: string }) {
     setIsPlaying((prev) => !prev)
   }, [])
 
-  if (loading) {
+  if (isLoading) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-8">
         <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
@@ -111,13 +73,13 @@ function ReplayContent({ battleId }: { battleId: string }) {
     )
   }
 
-  if (error || !battleData) {
+  if (queryError || !battleData) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-8">
         <div className="text-center">
           <h1 className="mb-4 text-2xl font-bold text-slate-200">Battle Not Found</h1>
           <p className="mb-6 text-slate-400">
-            {error || 'The requested battle could not be found.'}
+            {queryError?.message || 'The requested battle could not be found.'}
           </p>
           <Button href="/setup">Start New Battle</Button>
         </div>

@@ -1,61 +1,21 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { BattleCard } from '@/components/BattleCard'
 import { Button } from '@/components/ui/Button'
-import type { GameResult, GameConfig } from '@/lib/types'
-
-type Battle = {
-  id: string
-  config: GameConfig
-  models: string[]
-  status: string
-  rankings: GameResult[] | null
-  createdAt: number
-  completedAt: number | null
-}
+import { useBattles } from '@/hooks/useBattles'
 
 export default function HistoryPage() {
-  const [recentBattles, setRecentBattles] = useState<Battle[]>([])
-  const [allBattles, setAllBattles] = useState<Battle[]>([])
-  const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(0)
-  const [total, setTotal] = useState(0)
   const pageSize = 20
 
-  const loadBattles = useCallback(
-    (pageNum: number) => {
-      setLoading(true)
-      fetch(`/api/battles?status=complete&limit=${pageSize}&offset=${pageNum * pageSize}`)
-        .then((res) => res.json())
-        .then((data) => {
-          setAllBattles(data.battles || [])
-          setTotal(data.total || 0)
-          setPage(pageNum)
-          setLoading(false)
-        })
-        .catch((err) => {
-          console.error('Error loading battles:', err)
-          setLoading(false)
-        })
-    },
-    [pageSize]
-  )
+  const { data: recentData } = useBattles('complete', 5, 0)
+  const { data: battlesData, isLoading } = useBattles('complete', pageSize, page * pageSize)
 
-  useEffect(() => {
-    fetch('/api/battles?status=complete&limit=5')
-      .then((res) => res.json())
-      .then((data) => {
-        setRecentBattles(data.battles || [])
-      })
-      .catch((err) => console.error('Error loading recent battles:', err))
-
-    queueMicrotask(() => {
-      loadBattles(0)
-    })
-  }, [loadBattles])
-
+  const recentBattles = recentData?.battles || []
+  const allBattles = battlesData?.battles || []
+  const total = battlesData?.total || 0
   const totalPages = Math.ceil(total / pageSize)
 
   return (
@@ -92,7 +52,7 @@ export default function HistoryPage() {
         {/* All Battles Section */}
         <section>
           <h2 className="mb-4 text-2xl font-semibold text-slate-200">All Battles</h2>
-          {loading ? (
+          {isLoading ? (
             <div className="flex justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
             </div>
@@ -120,7 +80,7 @@ export default function HistoryPage() {
               {totalPages > 1 && (
                 <div className="flex items-center justify-center gap-4">
                   <button
-                    onClick={() => loadBattles(page - 1)}
+                    onClick={() => setPage((p) => Math.max(0, p - 1))}
                     disabled={page === 0}
                     className="rounded border border-slate-700 bg-slate-800 px-4 py-2 text-slate-300 transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
@@ -130,7 +90,7 @@ export default function HistoryPage() {
                     Page {page + 1} of {totalPages}
                   </span>
                   <button
-                    onClick={() => loadBattles(page + 1)}
+                    onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
                     disabled={page >= totalPages - 1}
                     className="rounded border border-slate-700 bg-slate-800 px-4 py-2 text-slate-300 transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
