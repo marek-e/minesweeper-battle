@@ -59,6 +59,7 @@ export default function HistoryPage() {
           ) : allBattles.length === 0 ? (
             <div className="py-12 text-center text-slate-400">
               <p>No battles found. Start a new battle to see it here!</p>
+              <Button href="/setup">New Battle</Button>
             </div>
           ) : (
             <>
