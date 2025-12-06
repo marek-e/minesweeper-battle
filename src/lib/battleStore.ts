@@ -1,10 +1,18 @@
 import { AuthorizedModel } from './battleConfig'
-import type { GameConfig, BoardState, GameOutcome, GameResult } from './types'
+import type {
+  GameConfig,
+  BoardState,
+  GameOutcome,
+  GameResult,
+  CompactBoard,
+  CellDelta,
+} from './types'
 
 export type BattleStatus = 'pending' | 'running' | 'complete'
 
 export type ModelState = {
   boardState: BoardState | null
+  prevBoardState: BoardState | null
   status: 'pending' | 'playing' | 'complete'
   outcome?: GameOutcome
   moves: number
@@ -32,7 +40,9 @@ export type BattleEvent =
       action: 'reveal' | 'flag'
       row: number
       col: number
-      boardState: BoardState
+      board: CompactBoard // Compact string encoding
+      delta?: CellDelta[] // Changed cells only (optional for efficiency)
+      boardState: BoardState // Full state for internal use
     }
   | {
       type: 'complete'
@@ -47,7 +57,7 @@ export type BattleEvent =
 
 class BattleStore {
   private battles = new Map<string, BattleState>()
-  private readonly BATTLE_EXPIRY_MS = 10 * 60 * 1000 // 10 minutes
+  private readonly BATTLE_EXPIRY_MS = 20 * 60 * 1000 // 20 minutes
 
   createBattle(config: GameConfig, models: AuthorizedModel[]): string {
     const battleId = `battle_${Date.now()}_${Math.random().toString(36).substring(7)}`
@@ -62,6 +72,7 @@ class BattleStore {
           modelId,
           {
             boardState: null,
+            prevBoardState: null,
             status: 'pending',
             moves: 0,
             safeRevealed: 0,
@@ -112,6 +123,7 @@ class BattleStore {
     } else if (event.type === 'move') {
       const modelState = battle.modelStates.get(event.modelId)
       if (modelState) {
+        modelState.prevBoardState = modelState.boardState
         modelState.boardState = event.boardState
         modelState.status = 'playing'
         modelState.moves++

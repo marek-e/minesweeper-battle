@@ -222,3 +222,132 @@ export function getVisibleBoard(board: BoardState): (string | number)[][] {
     })
   )
 }
+
+/**
+ * Encodes board state as a compact string for SSE transmission.
+ * Format: rows separated by \n, each row is a string of single chars.
+ * 'H' = Hidden, 'F' = Flagged, '0'-'8' = Revealed number.
+ * @param board - The current board state.
+ * @returns Compact string representation.
+ */
+export function encodeBoard(board: BoardState): string {
+  return board
+    .map((row) =>
+      row
+        .map((cell) => {
+          if (cell.isRevealed) {
+            if (cell.isMine) return 'M'
+            return String(cell.adjacentMines)
+          }
+          if (cell.isFlagged) {
+            return 'F'
+          }
+          return 'H'
+        })
+        .join('')
+    )
+    .join('\n')
+}
+
+/**
+ * Decodes a compact board string back to a visible board representation.
+ * @param encoded - Compact string representation (rows separated by \n).
+ * @param rows - Number of rows in the board.
+ * @param cols - Number of columns in the board.
+ * @returns 2D array of visible cell values.
+ */
+export function decodeBoard(encoded: string, rows: number, cols: number): (string | number)[][] {
+  const lines = encoded.split('\n')
+  const result: (string | number)[][] = []
+
+  for (let rowIdx = 0; rowIdx < rows; rowIdx++) {
+    const line = lines[rowIdx] || ''
+    const rowData: (string | number)[] = []
+    for (let colIdx = 0; colIdx < cols; colIdx++) {
+      const char = line[colIdx] || 'H'
+      if (char === 'M') {
+        rowData.push('M')
+      } else if (char === 'F') {
+        rowData.push('F')
+      } else if (char >= '0' && char <= '8') {
+        rowData.push(Number(char))
+      } else {
+        rowData.push('H')
+      }
+    }
+    result.push(rowData)
+  }
+
+  return result
+}
+
+/**
+ * Computes delta between two board states (changed cells only).
+ * @param prev - Previous board state (null for initial state).
+ * @param curr - Current board state.
+ * @returns Array of [row, col, value] tuples for changed cells.
+ */
+export function getDelta(
+  prev: BoardState | null,
+  curr: BoardState
+): Array<[number, number, string | number]> {
+  const delta: Array<[number, number, string | number]> = []
+
+  for (let row = 0; row < curr.length; row++) {
+    for (let col = 0; col < curr[row].length; col++) {
+      const currCell = curr[row][col]
+      const prevCell = prev?.[row]?.[col]
+
+      // Get current visible value
+      let currValue: string | number
+      if (currCell.isRevealed) {
+        currValue = currCell.adjacentMines
+      } else if (currCell.isFlagged) {
+        currValue = 'F'
+      } else {
+        currValue = 'H'
+      }
+
+      // Get previous visible value
+      let prevValue: string | number
+      if (prevCell) {
+        if (prevCell.isRevealed) {
+          prevValue = prevCell.adjacentMines
+        } else if (prevCell.isFlagged) {
+          prevValue = 'F'
+        } else {
+          prevValue = 'H'
+        }
+      } else {
+        prevValue = 'H' // Assume hidden if no previous state
+      }
+
+      // Only include if changed
+      if (currValue !== prevValue) {
+        delta.push([row, col, currValue])
+      }
+    }
+  }
+
+  return delta
+}
+
+/**
+ * Formats board for LLM prompt with row/column labels.
+ * Format: Column header row, then numbered rows with single-char cells.
+ * 'H' = Hidden, 'F' = Flagged, 0-8 = Revealed number.
+ * @param board - The current board state.
+ * @returns Formatted string with labels.
+ */
+export function encodeBoardForLLM(board: BoardState): string {
+  const visible = getVisibleBoard(board)
+  const cols = board[0]?.length || 0
+
+  // Column header
+  const header = '  ' + Array.from({ length: cols }, (_, i) => i).join('')
+
+  // Numbered rows
+  const rowsFormatted = visible.map((row, idx) => `${idx}${row.join('')}`)
+
+  return [header, ...rowsFormatted].join('\n')
+}

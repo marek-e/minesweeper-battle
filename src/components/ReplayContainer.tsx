@@ -45,7 +45,7 @@ export function ReplayContainer({ simulations }: ReplayContainerProps) {
       </div>
 
       {/* Replay Grids */}
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-2 gap-6">
         {simulations.map(({ result, replayLog }) => {
           // Determine the board state for the current step, clamping to the last available frame
           const currentFrameIndex = Math.min(step, replayLog.length - 1)

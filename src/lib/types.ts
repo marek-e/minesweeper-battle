@@ -11,6 +11,12 @@ export type CellState = {
 
 export type BoardState = CellState[][]
 
+// Compact visible board encoding (rows separated by \n)
+export type CompactBoard = string
+
+// Delta update for changed cells: [row, col, value]
+export type CellDelta = [number, number, string | number]
+
 export type GameResult = {
   modelId: string
   outcome: GameOutcome

@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { battleStore, BattleEvent, BattleState } from '@/lib/battleStore'
 import { createSSEController, SSEController, SSE_HEADERS } from '@/lib/sse'
+import { encodeBoard, getDelta } from '@/lib/minesweeper'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Event Payloads - Single source of truth for SSE data shapes
@@ -17,7 +18,8 @@ const eventPayloads = {
     action: event.action,
     row: event.row,
     col: event.col,
-    boardState: event.boardState,
+    board: event.board,
+    delta: event.delta,
   }),
 
   complete: (event: Extract<BattleEvent, { type: 'complete' }>) => ({
@@ -54,12 +56,14 @@ function sendCatchupEvents(sse: SSEController, battle: BattleState): boolean {
   // Send latest board state for each model
   for (const [modelId, state] of battle.modelStates) {
     if (state.boardState) {
+      const delta = getDelta(state.prevBoardState, state.boardState)
       sse.send('move', {
         modelId,
         action: 'reveal' as const,
         row: 0,
         col: 0,
-        boardState: state.boardState,
+        board: encodeBoard(state.boardState),
+        delta: delta.length > 0 ? delta : undefined,
       })
     }
 

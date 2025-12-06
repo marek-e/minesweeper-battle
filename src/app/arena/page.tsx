@@ -4,13 +4,23 @@ import { useQueryState } from 'nuqs'
 import { Button } from '@/components/ui/Button'
 import { ReplayContainer } from '@/components/ReplayContainer'
 import { RankingTable } from '@/components/RankingTable'
-import { GameResult, ReplayFrame, GameOutcome, GameConfig, BoardState } from '@/lib/types'
+import {
+  GameResult,
+  ReplayFrame,
+  GameOutcome,
+  GameConfig,
+  BoardState,
+  CompactBoard,
+} from '@/lib/types'
+import { decodeBoard } from '@/lib/minesweeper'
 import { useState, useMemo, useEffect, useRef, Suspense } from 'react'
 import { Loader2 } from 'lucide-react'
+import { BoardGrid } from '@/components/BoardGrid'
 import { parseAsString } from 'nuqs'
 
 type ModelState = {
   boardState: BoardState | null
+  compactBoard: CompactBoard | null // Compact encoded board
   status: 'pending' | 'playing' | 'complete'
   outcome?: GameOutcome
   moves: number
@@ -18,6 +28,27 @@ type ModelState = {
   minesHit: 0 | 1
   durationMs: number
   replayLog: ReplayFrame[]
+}
+
+// Convert decoded visible board to BoardState format for rendering
+function visibleBoardToBoardState(visible: (string | number)[][]): BoardState {
+  return visible.map((row, rowIdx) =>
+    row.map((cell, colIdx) => {
+      const isMine = cell === 'M'
+      const isRevealed = typeof cell === 'number' || cell === 'M' || (cell !== 'H' && cell !== 'F')
+      const isFlagged = cell === 'F'
+      const adjacentMines = typeof cell === 'number' ? cell : 0
+
+      return {
+        row: rowIdx,
+        col: colIdx,
+        isMine,
+        isRevealed,
+        isFlagged,
+        adjacentMines,
+      }
+    })
+  )
 }
 
 type BattleState = {
@@ -56,6 +87,7 @@ function ArenaContent() {
 
       modelStates.set(modelId, {
         boardState: null,
+        compactBoard: null,
         status: 'pending',
         moves: 0,
         safeRevealed: 0,
@@ -101,27 +133,35 @@ function ArenaContent() {
 
     eventSource.addEventListener('move', (e) => {
       const data = JSON.parse(e.data)
-      const { modelId, action, row, col, boardState } = data
+      const { modelId, action, row, col, board: compactBoard } = data
 
       setBattleState((prev) => {
-        const newState = { ...prev }
-        const modelState = newState.modelStates.get(modelId)
-        if (modelState) {
-          const newModelState = {
-            ...modelState,
-            boardState,
-            status: 'playing' as const,
-            moves: modelState.moves + 1,
-          }
+        const modelState = prev.modelStates.get(modelId)
+        if (!modelState || !prev.config) return prev
 
-          newModelState.replayLog.push({
-            boardState: JSON.parse(JSON.stringify(boardState)),
-            move: { action, row, col },
-          })
+        // Decode compact board
+        const visible = decodeBoard(compactBoard, prev.config.rows, prev.config.cols)
+        const boardState = visibleBoardToBoardState(visible)
 
-          newState.modelStates.set(modelId, newModelState)
+        const newModelState = {
+          ...modelState,
+          boardState,
+          compactBoard,
+          status: 'playing' as const,
+          moves: modelState.moves + 1,
+          replayLog: [
+            ...modelState.replayLog,
+            {
+              boardState: JSON.parse(JSON.stringify(boardState)),
+              move: { action, row, col },
+            },
+          ],
         }
-        return newState
+
+        const newModelStates = new Map(prev.modelStates)
+        newModelStates.set(modelId, newModelState)
+
+        return { ...prev, modelStates: newModelStates }
       })
     })
 
@@ -130,20 +170,21 @@ function ArenaContent() {
       const { modelId, outcome, moves, safeRevealed, minesHit, durationMs } = data
 
       setBattleState((prev) => {
-        const newState = { ...prev }
-        const modelState = newState.modelStates.get(modelId)
-        if (modelState) {
-          newState.modelStates.set(modelId, {
-            ...modelState,
-            status: 'complete',
-            outcome,
-            moves,
-            safeRevealed,
-            minesHit,
-            durationMs,
-          })
-        }
-        return newState
+        const modelState = prev.modelStates.get(modelId)
+        if (!modelState) return prev
+
+        const newModelStates = new Map(prev.modelStates)
+        newModelStates.set(modelId, {
+          ...modelState,
+          status: 'complete',
+          outcome,
+          moves,
+          safeRevealed,
+          minesHit,
+          durationMs,
+        })
+
+        return { ...prev, modelStates: newModelStates }
       })
     })
 
@@ -252,42 +293,67 @@ function ArenaContent() {
           </div>
         )}
 
-        {/* Model Status Cards */}
-        {modelStatuses.length > 0 && (
-          <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+        {/* Model Boards */}
+        {modelStatuses.length > 0 && config && (
+          <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
             {modelStatuses.map(({ modelId, status }) => {
               const modelState = battleState.modelStates.get(modelId)
+
+              // Create empty board if no board state yet
+              const emptyBoard: BoardState = Array.from({ length: config.rows }, (_, row) =>
+                Array.from({ length: config.cols }, (_, col) => ({
+                  row,
+                  col,
+                  isMine: false,
+                  isRevealed: false,
+                  isFlagged: false,
+                  adjacentMines: 0,
+                }))
+              )
+              const displayBoard = modelState?.boardState ?? emptyBoard
+
               return (
                 <div
                   key={modelId}
-                  className={`rounded-lg border p-4 transition-all ${
+                  className={`rounded-xl border p-4 transition-all ${
                     status === 'completed'
-                      ? 'border-green-500/50 bg-green-900/20'
+                      ? 'border-green-500/50 bg-green-900/10'
                       : status === 'running'
-                        ? 'border-blue-500/50 bg-blue-900/20'
-                        : 'border-slate-700 bg-slate-800/50'
+                        ? 'border-blue-500/50 bg-blue-900/10'
+                        : 'border-slate-700 bg-slate-800/30'
                   }`}
                 >
-                  <div className="flex items-center gap-2">
-                    {status === 'running' && (
-                      <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
-                    )}
-                    {status === 'completed' && <span className="text-green-400">✓</span>}
-                    {status === 'pending' && (
-                      <span className="h-4 w-4 rounded-full border-2 border-slate-600" />
-                    )}
-                    <span className="font-medium text-slate-200">{modelId}</span>
+                  {/* Header */}
+                  <div className="mb-4 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      {status === 'running' && (
+                        <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+                      )}
+                      {status === 'completed' && <span className="text-green-400">✓</span>}
+                      {status === 'pending' && (
+                        <span className="h-4 w-4 rounded-full border-2 border-slate-600" />
+                      )}
+                      <span className="text-lg font-semibold text-slate-200">{modelId}</span>
+                    </div>
+                    <div className="text-sm text-slate-400">
+                      {status === 'running' && `${modelState?.moves || 0} moves`}
+                      {status === 'completed' && modelState?.outcome && (
+                        <span
+                          className={
+                            modelState.outcome === 'win' ? 'text-green-400' : 'text-red-400'
+                          }
+                        >
+                          {modelState.outcome} · {modelState.moves} moves
+                        </span>
+                      )}
+                      {status === 'pending' && 'Waiting...'}
+                    </div>
                   </div>
-                  {status === 'running' && (
-                    <p className="mt-1 text-xs text-blue-400">
-                      Playing... ({modelState?.moves || 0} moves)
-                    </p>
-                  )}
-                  {status === 'completed' && modelState?.outcome && (
-                    <p className="mt-1 text-xs text-slate-400">
-                      {modelState.outcome} ({modelState.moves} moves)
-                    </p>
-                  )}
+
+                  {/* Board */}
+                  <div className="flex justify-center rounded-lg bg-slate-950/50 p-2">
+                    <BoardGrid board={displayBoard} />
+                  </div>
                 </div>
               )
             })}

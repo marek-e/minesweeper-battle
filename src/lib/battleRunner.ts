@@ -4,8 +4,10 @@ import {
   createBoard,
   flagCell,
   generateMinePositions,
-  getVisibleBoard,
   revealCell,
+  encodeBoard,
+  encodeBoardForLLM,
+  getDelta,
 } from '@/lib/minesweeper'
 import type { BoardState, GameConfig, GameOutcome } from '@/lib/types'
 import { AuthorizedModel } from '@/lib/battleConfig'
@@ -22,16 +24,18 @@ const models: Record<AuthorizedModel, LanguageModel> = {
 const MAX_MOVES = 60
 const MAX_RETRIES = 3
 
-function formatBoardForLLM(board: (string | number)[][]): string {
-  return board.map((row) => row.map((cell) => String(cell).padStart(2, ' ')).join(' ')).join('\n')
-}
-
 async function runModelSimulation(
   battleId: string,
   modelId: AuthorizedModel,
   config: GameConfig,
   boardSeed: number,
-  onMove: (boardState: BoardState, action: 'reveal' | 'flag', row: number, col: number) => void
+  onMove: (
+    boardState: BoardState,
+    prevBoardState: BoardState | null,
+    action: 'reveal' | 'flag',
+    row: number,
+    col: number
+  ) => void
 ): Promise<{
   outcome: GameOutcome
   moves: number
@@ -41,6 +45,7 @@ async function runModelSimulation(
 }> {
   const startTime = Date.now()
   let board: BoardState | null = null
+  let prevBoard: BoardState | null = null
   let moves = 0
   let safeRevealed = 0
   let outcome: GameOutcome = 'playing'
@@ -54,9 +59,8 @@ async function runModelSimulation(
 
     while (retries < MAX_RETRIES && !moveSuccessful) {
       try {
-        const visibleBoard = board ? getVisibleBoard(board) : null
-        const boardString = visibleBoard
-          ? formatBoardForLLM(visibleBoard)
+        const boardString = board
+          ? encodeBoardForLLM(board)
           : 'The board is empty. Make your first move.'
 
         const systemPrompt = `
@@ -66,15 +70,21 @@ You will be given the current board state and must return your next move in JSON
 'H' means a hidden cell. 'F' means a flagged cell. A number (0-8) means a revealed cell showing adjacent mines.
 Rows and columns are 0-indexed. Your move must be on a hidden, unflagged cell.
 Choose your action and coordinates carefully based on the visible numbers.
+
+IMPORTANT: You can submit multiple moves at once using makeMoves if you're confident they are safe.
+This is faster than one move at a time. Batch obvious safe cells together (e.g., cells adjacent to 0s).
+Use makeMove for single cautious moves, and makeMoves for batches of confident moves.
 `
 
         const { toolResults } = await generateText({
           model: models[modelId],
           system: systemPrompt,
           prompt: `Current board:\n${boardString}\n\nWhat is your next move?`,
+          toolChoice: 'required',
           tools: {
             makeMove: tool({
-              description: 'Make a move by revealing or flagging a cell.',
+              description:
+                'Make a single move by revealing or flagging a cell. Use for cautious moves.',
               inputSchema: z.object({
                 action: z.enum(['reveal', 'flag']),
                 row: z
@@ -115,9 +125,116 @@ Choose your action and coordinates carefully based on the visible numbers.
                 moveSuccessful = true
 
                 const boardStateCopy = JSON.parse(JSON.stringify(board)) as BoardState
-                onMove(boardStateCopy, action, row, col)
+                const prevBoardCopy = prevBoard
+                  ? (JSON.parse(JSON.stringify(prevBoard)) as BoardState)
+                  : null
+                onMove(boardStateCopy, prevBoardCopy, action, row, col)
+
+                prevBoard = boardStateCopy
 
                 return { success: true, row, col }
+              },
+            }),
+            makeMoves: tool({
+              description:
+                'Make multiple moves at once. Use for cells you are confident about (e.g., cells adjacent to 0s). Batch obvious safe cells together.',
+              inputSchema: z.object({
+                moves: z
+                  .array(
+                    z.object({
+                      action: z.enum(['reveal', 'flag']),
+                      row: z
+                        .number()
+                        .int()
+                        .min(0)
+                        .max(config.rows - 1),
+                      col: z
+                        .number()
+                        .int()
+                        .min(0)
+                        .max(config.cols - 1),
+                    })
+                  )
+                  .min(1)
+                  .max(20),
+                reasoning: z
+                  .string()
+                  .describe('A short explanation for why these moves are safe.')
+                  .optional(),
+              }),
+              execute: async ({ moves: moveList }) => {
+                const executedMoves: Array<{
+                  action: 'reveal' | 'flag'
+                  row: number
+                  col: number
+                }> = []
+                let stoppedEarly = false
+
+                for (const move of moveList) {
+                  // Stop if game is over
+                  if (outcome !== 'playing') {
+                    stoppedEarly = true
+                    break
+                  }
+
+                  // Initialize board on first move if needed
+                  if (!board) {
+                    const minePositions = generateMinePositions(config, boardSeed, {
+                      row: move.row,
+                      col: move.col,
+                    })
+                    board = createBoard(config, { row: move.row, col: move.col }, minePositions)
+                  }
+
+                  const cell = board[move.row][move.col]
+                  if (cell.isRevealed || (move.action === 'reveal' && cell.isFlagged)) {
+                    stoppedEarly = true
+                    break
+                  }
+
+                  if (move.action === 'reveal') {
+                    const { revealedCount, hitMine } = revealCell(board, move.row, move.col)
+                    if (hitMine) {
+                      outcome = 'loss'
+                      minesHit = 1
+                      executedMoves.push(move)
+                      moves++
+                      moveSuccessful = true
+
+                      const boardStateCopy = JSON.parse(JSON.stringify(board)) as BoardState
+                      const prevBoardCopy = prevBoard
+                        ? (JSON.parse(JSON.stringify(prevBoard)) as BoardState)
+                        : null
+                      onMove(boardStateCopy, prevBoardCopy, move.action, move.row, move.col)
+
+                      prevBoard = boardStateCopy
+                      stoppedEarly = true
+                      break
+                    }
+                    safeRevealed += revealedCount
+                  } else if (move.action === 'flag') {
+                    flagCell(board, move.row, move.col)
+                  }
+
+                  executedMoves.push(move)
+                  moves++
+                  moveSuccessful = true
+
+                  const boardStateCopy = JSON.parse(JSON.stringify(board)) as BoardState
+                  const prevBoardCopy = prevBoard
+                    ? (JSON.parse(JSON.stringify(prevBoard)) as BoardState)
+                    : null
+                  onMove(boardStateCopy, prevBoardCopy, move.action, move.row, move.col)
+
+                  prevBoard = boardStateCopy
+                }
+
+                return {
+                  success: true,
+                  executed: executedMoves.length,
+                  total: moveList.length,
+                  stoppedEarly,
+                }
               },
             }),
           },
@@ -183,13 +300,16 @@ export async function runBattle(battleId: string): Promise<void> {
         modelId,
         config,
         boardSeed,
-        (boardState, action, row, col) => {
+        (boardState, prevBoardState, action, row, col) => {
+          const delta = getDelta(prevBoardState, boardState)
           battleStore.emit(battleId, {
             type: 'move',
             modelId,
             action,
             row,
             col,
+            board: encodeBoard(boardState),
+            delta: delta.length > 0 ? delta : undefined,
             boardState,
           })
         }
