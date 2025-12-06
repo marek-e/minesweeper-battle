@@ -7,6 +7,8 @@ import type {
   CompactBoard,
   CellDelta,
 } from './types'
+import { insertBattle, updateBattleCompletion, insertFrame, insertResult } from './db'
+import { calculateScore } from './scoring'
 
 export type BattleStatus = 'pending' | 'running' | 'complete'
 
@@ -29,6 +31,8 @@ export type BattleState = {
   modelStates: Map<AuthorizedModel, ModelState>
   rankings: GameResult[] | null
   createdAt: number
+  boardSeed?: number
+  frameIndices: Map<AuthorizedModel, number>
   subscribers: Set<(event: BattleEvent) => void>
 }
 
@@ -57,9 +61,8 @@ export type BattleEvent =
 
 class BattleStore {
   private battles = new Map<string, BattleState>()
-  private readonly BATTLE_EXPIRY_MS = 20 * 60 * 1000 // 20 minutes
 
-  createBattle(config: GameConfig, models: AuthorizedModel[]): string {
+  createBattle(config: GameConfig, models: AuthorizedModel[], boardSeed: number): string {
     const battleId = `battle_${Date.now()}_${Math.random().toString(36).substring(7)}`
 
     const battle: BattleState = {
@@ -83,14 +86,33 @@ class BattleStore {
       ),
       rankings: null,
       createdAt: Date.now(),
+      boardSeed,
+      frameIndices: new Map(models.map((modelId) => [modelId, 0])),
       subscribers: new Set(),
     }
 
     this.battles.set(battleId, battle)
 
-    setTimeout(() => {
-      this.battles.delete(battleId)
-    }, this.BATTLE_EXPIRY_MS)
+    insertBattle(battleId, config, models, boardSeed).catch((err) => {
+      console.error(`[BattleStore] Error inserting battle ${battleId}:`, err)
+    })
+
+    const emptyBoard: BoardState = Array.from({ length: config.rows }, (_, row) =>
+      Array.from({ length: config.cols }, (_, col) => ({
+        row,
+        col,
+        isMine: false,
+        isRevealed: false,
+        isFlagged: false,
+        adjacentMines: 0,
+      }))
+    )
+
+    for (const modelId of models) {
+      insertFrame(battleId, modelId, 0, null, null, null, emptyBoard).catch((err) => {
+        console.error(`[BattleStore] Error inserting initial frame for ${modelId}:`, err)
+      })
+    }
 
     return battleId
   }
@@ -127,6 +149,20 @@ class BattleStore {
         modelState.boardState = event.boardState
         modelState.status = 'playing'
         modelState.moves++
+
+        const frameIndex = battle.frameIndices.get(event.modelId) ?? 0
+        insertFrame(
+          battleId,
+          event.modelId,
+          frameIndex,
+          event.action,
+          event.row,
+          event.col,
+          event.boardState
+        ).catch((err) => {
+          console.error(`[BattleStore] Error inserting frame for ${event.modelId}:`, err)
+        })
+        battle.frameIndices.set(event.modelId, frameIndex + 1)
       }
     } else if (event.type === 'complete') {
       const modelState = battle.modelStates.get(event.modelId)
@@ -137,10 +173,35 @@ class BattleStore {
         modelState.safeRevealed = event.safeRevealed
         modelState.minesHit = event.minesHit
         modelState.durationMs = event.durationMs
+
+        const score = calculateScore({
+          outcome: event.outcome,
+          safeRevealed: event.safeRevealed,
+          moves: event.moves,
+          minesHit: event.minesHit,
+          config: battle.config,
+        })
+
+        insertResult(battleId, event.modelId, {
+          modelId: event.modelId,
+          outcome: event.outcome,
+          score,
+          moves: event.moves,
+          durationMs: event.durationMs,
+          safeRevealed: event.safeRevealed,
+          totalSafe: battle.config.rows * battle.config.cols - battle.config.mineCount,
+          minesHit: event.minesHit,
+        }).catch((err) => {
+          console.error(`[BattleStore] Error inserting result for ${event.modelId}:`, err)
+        })
       }
     } else if (event.type === 'done') {
       battle.status = 'complete'
       battle.rankings = event.rankings
+
+      updateBattleCompletion(battleId, 'complete', event.rankings).catch((err) => {
+        console.error(`[BattleStore] Error updating battle completion:`, err)
+      })
     }
 
     battle.subscribers.forEach((callback) => {

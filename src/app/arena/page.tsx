@@ -2,16 +2,8 @@
 
 import { useQueryState } from 'nuqs'
 import { Button } from '@/components/ui/Button'
-import { ReplayContainer } from '@/components/ReplayContainer'
 import { RankingTable } from '@/components/RankingTable'
-import {
-  GameResult,
-  ReplayFrame,
-  GameOutcome,
-  GameConfig,
-  BoardState,
-  CompactBoard,
-} from '@/lib/types'
+import { GameResult, GameOutcome, GameConfig, BoardState, CompactBoard } from '@/lib/types'
 import { decodeBoard } from '@/lib/minesweeper'
 import { useState, useMemo, useEffect, useRef, Suspense } from 'react'
 import { Loader2 } from 'lucide-react'
@@ -27,7 +19,6 @@ type ModelState = {
   safeRevealed: number
   minesHit: 0 | 1
   durationMs: number
-  replayLog: ReplayFrame[]
 }
 
 // Convert decoded visible board to BoardState format for rendering
@@ -71,20 +62,9 @@ function ArenaContent() {
 
   const eventSourceRef = useRef<EventSource | null>(null)
 
-  const initializeModels = (models: string[], config: GameConfig) => {
+  const initializeModels = (models: string[]) => {
     const modelStates = new Map<string, ModelState>()
     models.forEach((modelId) => {
-      const emptyBoard: BoardState = Array.from({ length: config.rows }, (_, row) =>
-        Array.from({ length: config.cols }, (_, col) => ({
-          row,
-          col,
-          isMine: false,
-          isRevealed: false,
-          isFlagged: false,
-          adjacentMines: 0,
-        }))
-      )
-
       modelStates.set(modelId, {
         boardState: null,
         compactBoard: null,
@@ -93,12 +73,6 @@ function ArenaContent() {
         safeRevealed: 0,
         minesHit: 0,
         durationMs: 0,
-        replayLog: [
-          {
-            boardState: emptyBoard,
-            move: null,
-          },
-        ],
       })
     })
     return modelStates
@@ -126,14 +100,14 @@ function ArenaContent() {
         status: 'running',
         config,
         models,
-        modelStates: initializeModels(models, config),
+        modelStates: initializeModels(models),
         rankings: null,
       })
     })
 
     eventSource.addEventListener('move', (e) => {
       const data = JSON.parse(e.data)
-      const { modelId, action, row, col, board: compactBoard } = data
+      const { modelId, board: compactBoard } = data
 
       setBattleState((prev) => {
         const modelState = prev.modelStates.get(modelId)
@@ -149,13 +123,6 @@ function ArenaContent() {
           compactBoard,
           status: 'playing' as const,
           moves: modelState.moves + 1,
-          replayLog: [
-            ...modelState.replayLog,
-            {
-              boardState: JSON.parse(JSON.stringify(boardState)),
-              move: { action, row, col },
-            },
-          ],
         }
 
         const newModelStates = new Map(prev.modelStates)
@@ -213,38 +180,6 @@ function ArenaContent() {
     }
   }, [battleId])
 
-  const simulations = useMemo(() => {
-    const sims: Array<{
-      result: {
-        modelId: string
-        outcome: GameOutcome
-        moves: number
-        durationMs: number
-        safeRevealed: number
-        minesHit: 0 | 1
-      }
-      replayLog: ReplayFrame[]
-    }> = []
-
-    battleState.modelStates.forEach((modelState, modelId) => {
-      if (modelState.outcome) {
-        sims.push({
-          result: {
-            modelId,
-            outcome: modelState.outcome,
-            moves: modelState.moves,
-            durationMs: modelState.durationMs,
-            safeRevealed: modelState.safeRevealed,
-            minesHit: modelState.minesHit,
-          },
-          replayLog: modelState.replayLog,
-        })
-      }
-    })
-
-    return sims
-  }, [battleState.modelStates])
-
   const modelStatuses = useMemo(() => {
     return Array.from(battleState.modelStates.entries()).map(([modelId, state]) => ({
       modelId,
@@ -282,6 +217,9 @@ function ArenaContent() {
           </Button>
           <Button href="/setup" variant="secondary" className="px-6 py-3">
             New Setup
+          </Button>
+          <Button href="/history" variant="secondary" className="px-6 py-3">
+            Battle History
           </Button>
         </div>
 
@@ -362,14 +300,16 @@ function ArenaContent() {
 
         {/* Rankings */}
         {allCompleted && battleState.rankings && battleState.rankings.length > 0 && (
-          <RankingTable results={battleState.rankings} />
-        )}
-
-        {/* Replay */}
-        {simulations.length > 0 && (
-          <div className="mt-12">
-            <ReplayContainer simulations={simulations} />
-          </div>
+          <>
+            <RankingTable results={battleState.rankings} />
+            {battleId && (
+              <div className="mt-8 text-center">
+                <Button href={`/replay/${battleId}`} className="px-8 py-3">
+                  See Replay
+                </Button>
+              </div>
+            )}
+          </>
         )}
 
         {/* Empty state */}

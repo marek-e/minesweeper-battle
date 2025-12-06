@@ -283,9 +283,10 @@ export async function runBattle(battleId: string): Promise<void> {
     throw new Error(`Battle ${battleId} not found`)
   }
 
-  const { config, models } = battle
-
-  const boardSeed = Math.floor(Math.random() * 2147483647)
+  const { config, models, boardSeed } = battle
+  if (!boardSeed) {
+    throw new Error(`Battle ${battleId} missing boardSeed`)
+  }
 
   battleStore.emit(battleId, {
     type: 'init',

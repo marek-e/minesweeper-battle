@@ -51,6 +51,12 @@ export default function RootLayout({
               >
                 Setup LLM Game
               </Link>
+              <Link
+                href="/history"
+                className="rounded-md px-4 py-2 font-bold text-slate-300 transition-colors hover:bg-slate-800/50 hover:text-white"
+              >
+                History
+              </Link>
             </nav>
           </header>
           {children}

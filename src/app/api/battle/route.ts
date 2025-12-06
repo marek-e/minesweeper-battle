@@ -30,7 +30,8 @@ export async function POST(request: NextRequest) {
 
     const { rows, cols, mineCount, models } = result.data
 
-    const battleId = battleStore.createBattle({ rows, cols, mineCount }, models)
+    const boardSeed = Math.floor(Math.random() * 2147483647)
+    const battleId = battleStore.createBattle({ rows, cols, mineCount }, models, boardSeed)
 
     runBattle(battleId).catch((error) => {
       console.error(`[Battle ${battleId}] Error:`, error)
