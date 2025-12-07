@@ -11,7 +11,16 @@ import {
   getFilteredRowModel,
   SortingState,
 } from '@tanstack/react-table'
-import { Eye, ChevronUp, ChevronDown, Search, Trophy, Skull, HelpCircle, AlertCircle } from 'lucide-react'
+import {
+  Eye,
+  ChevronUp,
+  ChevronDown,
+  Search,
+  Trophy,
+  Skull,
+  HelpCircle,
+  AlertCircle,
+} from 'lucide-react'
 import type { GameResult, GameConfig } from '@/lib/types'
 
 type Battle = {
@@ -41,11 +50,13 @@ function formatDuration(ms: number): string {
 }
 
 function formatDate(timestamp: number): string {
-  return new Date(timestamp).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).replace(/(\d+)\/(\d+)\/(\d+)/, '$3-$1-$2')
+  return new Date(timestamp)
+    .toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    })
+    .replace(/(\d+)\/(\d+)\/(\d+)/, '$3-$1-$2')
 }
 
 export function BattlesTable({ battles }: { battles: Battle[] }) {
@@ -97,7 +108,9 @@ export function BattlesTable({ battles }: { battles: Battle[] }) {
             return (
               <div className="flex items-center gap-2">
                 {Icon && <Icon size={14} className={cfg.color} />}
-                <span className={outcome === 'win' ? 'font-medium text-emerald-400' : 'text-slate-400'}>
+                <span
+                  className={outcome === 'win' ? 'font-medium text-emerald-400' : 'text-slate-400'}
+                >
                   {outcome === 'win' ? winner.modelId.split('-').slice(0, 2).join('-') : 'Tie'}
                 </span>
               </div>
@@ -179,7 +192,9 @@ export function BattlesTable({ battles }: { battles: Battle[] }) {
                   <th
                     key={header.id}
                     className={`px-5 py-4 text-left text-xs font-semibold tracking-wider text-slate-400 uppercase ${
-                      header.column.getCanSort() ? 'cursor-pointer select-none hover:text-slate-300' : ''
+                      header.column.getCanSort()
+                        ? 'cursor-pointer select-none hover:text-slate-300'
+                        : ''
                     }`}
                     onClick={header.column.getToggleSortingHandler()}
                   >
@@ -210,10 +225,7 @@ export function BattlesTable({ battles }: { battles: Battle[] }) {
               </tr>
             ) : (
               table.getRowModel().rows.map((row) => (
-                <tr
-                  key={row.id}
-                  className="transition-colors hover:bg-slate-700/20"
-                >
+                <tr key={row.id} className="transition-colors hover:bg-slate-700/20">
                   {row.getVisibleCells().map((cell) => (
                     <td key={cell.id} className="px-5 py-4 text-sm">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -228,4 +240,3 @@ export function BattlesTable({ battles }: { battles: Battle[] }) {
     </div>
   )
 }
-

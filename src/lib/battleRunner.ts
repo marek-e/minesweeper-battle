@@ -19,6 +19,12 @@ const models: Record<AuthorizedModel, LanguageModel> = {
   'gemini-2.5-flash': 'google/gemini-2.5-flash',
   'claude-3.7-sonnet': 'anthropic/claude-3.7-sonnet',
   'grok-code-fast-1': 'xai/grok-code-fast-1',
+  'gpt-4.1-mini': 'openai/gpt-4.1-mini',
+  'gemini-3-pro-preview': 'google/gemini-3-pro-preview',
+  'claude-sonnet-4.5': 'anthropic/claude-sonnet-4.5',
+  'claude-haiku-4.5': 'anthropic/claude-haiku-4.5',
+  'grok-4-fast-reasoning': 'xai/grok-4-fast-reasoning',
+  'deepseek-v3.2': 'deepseek/deepseek-v3.2',
 }
 
 const MAX_MOVES = 60
@@ -243,6 +249,8 @@ Use makeMove for single cautious moves, and makeMoves for batches of confident m
         if (!toolResults || toolResults.length === 0) {
           throw new Error('No move was made.')
         }
+        console.log('Model:', modelId)
+        console.log('🚀 ~ runModelSimulation ~ toolResults:', toolResults)
       } catch (error) {
         console.error(`[${modelId}] Error on move ${moves + 1}, retry ${retries + 1}:`, error)
 

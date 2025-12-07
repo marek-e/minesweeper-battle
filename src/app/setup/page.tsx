@@ -21,6 +21,12 @@ const MODEL_NAMES: Record<AuthorizedModel, string> = {
   'gemini-2.5-flash': 'Gemini 2.5 Flash',
   'claude-3.7-sonnet': 'Claude 3.7 Sonnet',
   'grok-code-fast-1': 'Grok Code Fast 1',
+  'gpt-4.1-mini': 'GPT-4.1 Mini',
+  'gemini-3-pro-preview': 'Gemini 3 Pro Preview',
+  'claude-sonnet-4.5': 'Claude Sonnet 4.5',
+  'claude-haiku-4.5': 'Claude Haiku 4.5',
+  'grok-4-fast-reasoning': 'Grok 4 Fast Reasoning',
+  'deepseek-v3.2': 'DeepSeek V3.2',
 }
 
 const DIFFICULTIES: Record<Difficulty, GameConfig> = {
@@ -89,6 +95,7 @@ function SetupContent() {
   const [isStarting, setIsStarting] = useState(false)
 
   const { rows, cols, mineCount, models } = config
+  console.log('🚀 ~ SetupContent ~ models:', models)
 
   const handleDifficultyClick = (difficulty: Difficulty) => {
     const preset = DIFFICULTIES[difficulty]
@@ -184,7 +191,13 @@ function SetupContent() {
                 id={modelId}
                 label={MODEL_NAMES[modelId] || modelId}
                 checked={models.includes(modelId)}
-                onChange={(isChecked) => handleModelToggle(modelId, isChecked)}
+                onChange={(isChecked) => {
+                  if (models.length >= 4 && isChecked) {
+                    alert('You can only select up to 4 models')
+                    return
+                  }
+                  handleModelToggle(modelId, isChecked)
+                }}
               />
             ))}
           </div>

@@ -44,18 +44,19 @@ Maintain a **stable, reproducible, deterministic** Minesweeper evaluation platfo
 
 **Pure, deterministic functions. No side effects.**
 
-| Function | Purpose |
-|----------|---------|
-| `generateMinePositions(config, seed, excludedCell?)` | Seeded PRNG mine placement |
-| `createBoard(config, firstClick?, minePositions?)` | Initialize board state |
-| `revealCell(board, row, col)` | Reveal + flood-fill, returns `{ revealedCount, hitMine }` |
-| `flagCell(board, row, col)` | Toggle flag |
-| `getVisibleBoard(board)` | Convert to visible `(string\|number)[][]` |
-| `encodeBoard(board)` | Compact string for SSE |
-| `decodeBoard(encoded, rows, cols)` | Reconstruct visible board |
-| `encodeBoardForLLM(board)` | Labeled format with row/col headers |
+| Function                                             | Purpose                                                   |
+| ---------------------------------------------------- | --------------------------------------------------------- |
+| `generateMinePositions(config, seed, excludedCell?)` | Seeded PRNG mine placement                                |
+| `createBoard(config, firstClick?, minePositions?)`   | Initialize board state                                    |
+| `revealCell(board, row, col)`                        | Reveal + flood-fill, returns `{ revealedCount, hitMine }` |
+| `flagCell(board, row, col)`                          | Toggle flag                                               |
+| `getVisibleBoard(board)`                             | Convert to visible `(string\|number)[][]`                 |
+| `encodeBoard(board)`                                 | Compact string for SSE                                    |
+| `decodeBoard(encoded, rows, cols)`                   | Reconstruct visible board                                 |
+| `encodeBoardForLLM(board)`                           | Labeled format with row/col headers                       |
 
 **Rules:**
+
 - Never add randomness without a seed parameter
 - All mutations must be in-place on the `BoardState` object
 - Flood-fill must be BFS, not recursive (stack safety)
@@ -64,17 +65,19 @@ Maintain a **stable, reproducible, deterministic** Minesweeper evaluation platfo
 
 **Manages the LLM game loop.**
 
-| Component | Description |
-|-----------|-------------|
-| `runModelSimulation()` | Single model's game loop |
-| `runBattle()` | Parallel execution of all models |
-| Tools: `makeMove`, `makeMoves` | Vercel AI SDK tool definitions |
+| Component                      | Description                      |
+| ------------------------------ | -------------------------------- |
+| `runModelSimulation()`         | Single model's game loop         |
+| `runBattle()`                  | Parallel execution of all models |
+| Tools: `makeMove`, `makeMoves` | Vercel AI SDK tool definitions   |
 
 **Constants:**
+
 - `MAX_MOVES = 60` — prevent infinite loops
 - `MAX_RETRIES = 3` — per-move retry limit
 
 **Flow:**
+
 1. Send system prompt + visible board to model
 2. Model calls `makeMove` or `makeMoves` tool
 3. Execute move(s), update board, emit SSE event
@@ -85,13 +88,14 @@ Maintain a **stable, reproducible, deterministic** Minesweeper evaluation platfo
 
 **In-memory event-sourced state.**
 
-| Type | Purpose |
-|------|---------|
+| Type          | Purpose                                      |
+| ------------- | -------------------------------------------- |
 | `BattleState` | Full battle state including all model states |
-| `ModelState` | Per-model board, status, stats |
-| `BattleEvent` | `init`, `move`, `complete`, `done` events |
+| `ModelState`  | Per-model board, status, stats               |
+| `BattleEvent` | `init`, `move`, `complete`, `done` events    |
 
 **Methods:**
+
 - `createBattle()` — Initialize battle, persist to DB
 - `subscribe()` — SSE subscription
 - `emit()` — Broadcast event to subscribers + persist frame
@@ -100,16 +104,17 @@ Maintain a **stable, reproducible, deterministic** Minesweeper evaluation platfo
 
 **Vercel KV with in-memory fallback.**
 
-| Function | Purpose |
-|----------|---------|
-| `insertBattle()` | Create battle metadata |
-| `insertFrame()` | Store frame for replay |
-| `insertResult()` | Store final result per model |
-| `updateBattleCompletion()` | Mark battle complete |
-| `getCompletedBattle()` | Fetch battle + all frames |
-| `listBattles()` | Paginated list |
+| Function                   | Purpose                      |
+| -------------------------- | ---------------------------- |
+| `insertBattle()`           | Create battle metadata       |
+| `insertFrame()`            | Store frame for replay       |
+| `insertResult()`           | Store final result per model |
+| `updateBattleCompletion()` | Mark battle complete         |
+| `getCompletedBattle()`     | Fetch battle + all frames    |
+| `listBattles()`            | Paginated list               |
 
 **Storage Schema:**
+
 ```
 battle:{id}              → BattleMetadata
 battle:{id}:frames:{model} → BattleFrame[]
@@ -174,12 +179,12 @@ type GameConfig = {
 
 ### Event Types
 
-| Event | Payload | When |
-|-------|---------|------|
-| `init` | `{ config, models }` | Battle starts |
-| `move` | `{ modelId, action, row, col, board, delta? }` | After each move |
-| `complete` | `{ modelId, outcome, moves, safeRevealed, minesHit, durationMs }` | Model finishes |
-| `done` | `{ rankings }` | All models finished |
+| Event      | Payload                                                           | When                |
+| ---------- | ----------------------------------------------------------------- | ------------------- |
+| `init`     | `{ config, models }`                                              | Battle starts       |
+| `move`     | `{ modelId, action, row, col, board, delta? }`                    | After each move     |
+| `complete` | `{ modelId, outcome, moves, safeRevealed, minesHit, durationMs }` | Model finishes      |
+| `done`     | `{ rankings }`                                                    | All models finished |
 
 ### Board Encoding in `move` Event
 
@@ -211,6 +216,7 @@ type GameConfig = {
 ```
 
 **Batch behavior:**
+
 - Executes sequentially
 - Stops on first mine hit or invalid move
 - Returns `{ success, executed, total, stoppedEarly }`
@@ -237,6 +243,7 @@ const MAX_MINES = 200
 ### Model Constraints
 
 Models must be in `AUTHORIZED_MODELS` array:
+
 ```typescript
 const AUTHORIZED_MODELS = [
   'gpt-5-mini',
@@ -247,6 +254,7 @@ const AUTHORIZED_MODELS = [
 ```
 
 To add a new model:
+
 1. Add to `AUTHORIZED_MODELS` in `/lib/battleConfig.ts`
 2. Add model mapping in `/lib/battleRunner.ts` `models` record
 
@@ -258,10 +266,7 @@ To add a new model:
 
 ```typescript
 // 1. /lib/battleConfig.ts
-export const AUTHORIZED_MODELS = [
-  ...existing,
-  'new-model-id',
-] as const
+export const AUTHORIZED_MODELS = [...existing, 'new-model-id'] as const
 
 // 2. /lib/battleRunner.ts
 const models: Record<AuthorizedModel, LanguageModel> = {
@@ -320,13 +325,13 @@ types.ts ───────────────────────�
 
 ## Error Handling
 
-| Scenario | Outcome |
-|----------|---------|
-| Invalid JSON from LLM | Retry (up to 3) |
-| Invalid move (already revealed, out of bounds) | Retry |
-| 3 consecutive failures | `outcome: "error"` |
-| 60 moves reached | `outcome: "stuck"` |
-| LLM returns no tool call | `outcome: "stuck"` |
+| Scenario                                       | Outcome            |
+| ---------------------------------------------- | ------------------ |
+| Invalid JSON from LLM                          | Retry (up to 3)    |
+| Invalid move (already revealed, out of bounds) | Retry              |
+| 3 consecutive failures                         | `outcome: "error"` |
+| 60 moves reached                               | `outcome: "stuck"` |
+| LLM returns no tool call                       | `outcome: "stuck"` |
 
 ---
 

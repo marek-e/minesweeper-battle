@@ -119,6 +119,7 @@ export async function GET(
         try {
           const isDone = sendBattleEvent(sse, event)
           if (isDone) {
+            console.log('🚀 ~ sendBattleEvent ~ isDone -> close stream')
             shouldClose = true
             setTimeout(() => sse.close(), 100)
           }
@@ -131,6 +132,7 @@ export async function GET(
       if (battle.status !== 'pending') {
         const isDone = sendCatchupEvents(sse, battle)
         if (isDone) {
+          console.log('🚀 ~ sendCatchupEvents ~ isDone -> close stream')
           shouldClose = true
           setTimeout(() => sse.close(), 100)
         }
