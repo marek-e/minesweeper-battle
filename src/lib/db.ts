@@ -1,4 +1,4 @@
-import { kv } from '@vercel/kv'
+import { Redis } from '@upstash/redis'
 import { GameConfig, GameResult, BoardState } from './types'
 import { AuthorizedModel } from './battleConfig'
 
@@ -6,12 +6,12 @@ const inMemoryStore = new Map<string, unknown>()
 const inMemorySortedSet = new Map<string, Array<{ score: number; member: string }>>()
 
 if (process.env.NODE_ENV !== 'production') {
-  console.log('⚠️  Using in-memory storage (KV not configured). Data will be lost on restart.')
+  console.log('⚠️  Using in-memory storage (Redis not configured). Data will be lost on restart.')
 }
 
 function getKv() {
-  if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
-    return kv
+  if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+    return Redis.fromEnv()
   }
 
   return {
@@ -54,7 +54,7 @@ function getKv() {
     async zcard(key: string): Promise<number> {
       return inMemorySortedSet.get(key)?.length || 0
     },
-  } as typeof kv
+  } as Redis
 }
 
 export type BattleFrame = {

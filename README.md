@@ -226,8 +226,8 @@ pnpm install
 
 ```env
 # Optional - uses in-memory storage without these
-KV_REST_API_URL=your-vercel-kv-url
-KV_REST_API_TOKEN=your-vercel-kv-token
+UPSTASH_REDIS_REST_URL=your-upstash-redis-url
+UPSTASH_REDIS_REST_TOKEN=your-upstash-redis-token
 
 # AI Gateway
 AI_GATEWAY_API_KEY=...
