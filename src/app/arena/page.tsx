@@ -43,11 +43,12 @@ function visibleBoardToBoardState(visible: (string | number)[][]): BoardState {
 }
 
 type BattleState = {
-  status: 'idle' | 'connecting' | 'running' | 'complete'
+  status: 'idle' | 'connecting' | 'running' | 'complete' | 'error'
   config: GameConfig | null
   models: string[]
   modelStates: Map<string, ModelState>
   rankings: GameResult[] | null
+  error?: { message: string; code: 'credit_exhausted' | 'unknown' }
 }
 
 function ArenaContent() {
@@ -58,6 +59,7 @@ function ArenaContent() {
     models: [],
     modelStates: new Map(),
     rankings: null,
+    error: undefined,
   })
 
   const eventSourceRef = useRef<EventSource | null>(null)
@@ -168,8 +170,24 @@ function ArenaContent() {
       eventSource.close()
     })
 
+    eventSource.addEventListener('error', (e: MessageEvent) => {
+      const data = JSON.parse(e.data)
+      const { error: errorMessage, code } = data
+
+      setBattleState((prev) => ({
+        ...prev,
+        status: 'error',
+        error: {
+          message: errorMessage,
+          code: code || 'unknown',
+        },
+      }))
+
+      eventSource.close()
+    })
+
     eventSource.onerror = (error) => {
-      console.error('SSE error:', error)
+      console.error('SSE connection error:', error)
       eventSource.close()
       setBattleState((prev) => ({ ...prev, status: 'idle' }))
     }
@@ -228,6 +246,24 @@ function ArenaContent() {
           <div className="mb-8 text-center">
             <Loader2 className="mx-auto h-8 w-8 animate-spin text-blue-400" />
             <p className="mt-2 text-slate-400">Connecting to battle...</p>
+          </div>
+        )}
+
+        {/* Error Status */}
+        {battleState.status === 'error' && battleState.error && (
+          <div className="mb-8 rounded-xl border border-red-500/50 bg-red-900/10 p-6 text-center">
+            <div className="mb-2 text-xl font-semibold text-red-400">Battle Error</div>
+            <p className="mb-4 text-slate-300">{battleState.error.message}</p>
+            {battleState.error.code === 'credit_exhausted' && (
+              <p className="text-sm text-slate-400">
+                API credits exhausted. Please check your AI Gateway billing.
+              </p>
+            )}
+            <div className="mt-6">
+              <Button href="/setup" className="px-6 py-3">
+                Start New Battle
+              </Button>
+            </div>
           </div>
         )}
 

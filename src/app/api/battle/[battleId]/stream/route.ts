@@ -34,6 +34,11 @@ const eventPayloads = {
   done: (event: Extract<BattleEvent, { type: 'done' }>) => ({
     rankings: event.rankings,
   }),
+
+  error: (event: Extract<BattleEvent, { type: 'error' }>) => ({
+    error: event.error,
+    code: event.code,
+  }),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -43,7 +48,7 @@ const eventPayloads = {
 function sendBattleEvent(sse: SSEController, event: BattleEvent): boolean {
   const payload = eventPayloads[event.type](event as never)
   sse.send(event.type, payload)
-  return event.type === 'done'
+  return event.type === 'done' || event.type === 'error'
 }
 
 function sendCatchupEvents(sse: SSEController, battle: BattleState): boolean {

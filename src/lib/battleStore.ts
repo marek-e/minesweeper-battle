@@ -58,6 +58,7 @@ export type BattleEvent =
       durationMs: number
     }
   | { type: 'done'; rankings: GameResult[] }
+  | { type: 'error'; error: string; code: 'credit_exhausted' | 'unknown' }
 
 class BattleStore {
   private battles = new Map<string, BattleState>()
@@ -202,6 +203,9 @@ class BattleStore {
       updateBattleCompletion(battleId, 'complete', event.rankings).catch((err) => {
         console.error(`[BattleStore] Error updating battle completion:`, err)
       })
+    } else if (event.type === 'error') {
+      // Error events are broadcast to subscribers but don't change battle state
+      // The battle will continue with error outcomes for affected models
     }
 
     battle.subscribers.forEach((callback) => {

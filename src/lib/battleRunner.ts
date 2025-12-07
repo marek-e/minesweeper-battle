@@ -1,4 +1,4 @@
-import { generateText, LanguageModel, tool } from 'ai'
+import { generateText, LanguageModel, tool, APICallError } from 'ai'
 import { z } from 'zod'
 import {
   createBoard,
@@ -245,6 +245,23 @@ Use makeMove for single cautious moves, and makeMoves for batches of confident m
         }
       } catch (error) {
         console.error(`[${modelId}] Error on move ${moves + 1}, retry ${retries + 1}:`, error)
+
+        const isCreditError =
+          (APICallError.isInstance(error) &&
+            (error.statusCode === 402 || error.statusCode === 429)) ||
+          (error instanceof Error &&
+            /insufficient|quota|credit|billing|exceeded/i.test(error.message))
+
+        if (isCreditError) {
+          battleStore.emit(battleId, {
+            type: 'error',
+            error: error instanceof Error ? error.message : 'API credit exhausted',
+            code: 'credit_exhausted',
+          })
+          outcome = 'error'
+          break
+        }
+
         retries++
         if (retries >= MAX_RETRIES) {
           outcome = 'error'
@@ -332,6 +349,23 @@ export async function runBattle(battleId: string): Promise<void> {
       }
     } catch (error) {
       console.error(`[${modelId}] Battle error:`, error)
+
+      // Check for credit/quota exhaustion errors
+      const isCreditError =
+        (APICallError.isInstance(error) &&
+          (error.statusCode === 402 || error.statusCode === 429)) ||
+        (error instanceof Error &&
+          /insufficient|quota|credit|billing|exceeded/i.test(error.message))
+
+      if (isCreditError) {
+        // Emit error event for credit exhaustion
+        battleStore.emit(battleId, {
+          type: 'error',
+          error: error instanceof Error ? error.message : 'API credit exhausted',
+          code: 'credit_exhausted',
+        })
+      }
+
       battleStore.emit(battleId, {
         type: 'complete',
         modelId,
