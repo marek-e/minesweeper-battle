@@ -9,6 +9,7 @@ import { useState, useMemo, useEffect, useRef, Suspense } from 'react'
 import { Loader2 } from 'lucide-react'
 import { BoardGrid } from '@/components/BoardGrid'
 import { parseAsString } from 'nuqs'
+import { cn } from '@/lib/utils'
 
 type ModelState = {
   boardState: BoardState | null
@@ -216,6 +217,8 @@ function ArenaContent() {
 
   const { config } = battleState
 
+  console.log(config)
+
   return (
     <main className="flex flex-col items-center p-8">
       <div className="w-full max-w-7xl">
@@ -269,7 +272,7 @@ function ArenaContent() {
 
         {/* Model Boards */}
         {modelStatuses.length > 0 && config && (
-          <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div className={cn('mb-8 grid gap-6', config.cols > 20 ? 'grid-cols-1' : 'grid-cols-2')}>
             {modelStatuses.map(({ modelId, status }) => {
               const modelState = battleState.modelStates.get(modelId)
 

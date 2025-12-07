@@ -1,7 +1,7 @@
 'use client'
 
 import type { BoardState } from '@/lib/types'
-import { Cell } from '@/components/Cell'
+import { Cell, type CellSize } from '@/components/Cell'
 
 type BoardGridProps = {
   board: BoardState
@@ -9,11 +9,20 @@ type BoardGridProps = {
   onCellContextMenu?: (row: number, col: number) => void
 }
 
+function getCellSize(cols: number): CellSize {
+  if (cols > 20) return 'sm'
+  if (cols > 12) return 'md'
+  return 'lg'
+}
+
 export function BoardGrid({ board, onCellClick, onCellContextMenu }: BoardGridProps) {
+  const cols = board[0]?.length ?? 0
+  const cellSize = getCellSize(cols)
+
   const gridStyle = {
     display: 'grid',
     gridTemplateRows: `repeat(${board.length}, minmax(0, 1fr))`,
-    gridTemplateColumns: `repeat(${board[0].length}, minmax(0, 1fr))`,
+    gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
     gap: '2px',
   }
 
@@ -23,6 +32,7 @@ export function BoardGrid({ board, onCellClick, onCellContextMenu }: BoardGridPr
         <Cell
           key={`${cell.row}-${cell.col}`}
           state={cell}
+          size={cellSize}
           onClick={onCellClick ? () => onCellClick(cell.row, cell.col) : undefined}
           onContextMenu={
             onCellContextMenu

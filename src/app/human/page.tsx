@@ -147,10 +147,10 @@ export default function HumanPage() {
 
   return (
     <>
-      <main className="mx-auto max-w-7xl p-4 md:p-8">
-        <div className="flex w-full justify-center gap-8">
+      <main className="mx-auto max-w-fit p-4 md:p-8">
+        <div className="flex w-full flex-col items-center gap-8 xl:flex-row xl:items-start">
           {/* Left Column */}
-          <div className="flex flex-col items-start gap-8">
+          <div className="flex flex-col items-center gap-8 xl:items-start">
             <h1 className="text-[2rem] font-bold">Human Play Mode</h1>
             <div className="grid w-full grid-cols-3 gap-4">
               <StatBox label="Time" value={formattedTime} />
@@ -166,7 +166,7 @@ export default function HumanPage() {
           </div>
 
           {/* Right Column (Sidebar) */}
-          <aside className="flex w-full flex-col gap-8 lg:w-64">
+          <aside className="flex w-full flex-col gap-8 xl:w-64">
             <div className="h-[48px]"></div>
             <div className="rounded-lg border border-slate-700 bg-slate-800/50 p-4">
               <label htmlFor="difficulty" className="mb-2 block text-sm font-medium text-slate-400">

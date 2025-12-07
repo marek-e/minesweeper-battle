@@ -11,7 +11,11 @@ if (process.env.NODE_ENV !== 'production') {
 
 function getKv() {
   if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+    console.log('Using Upstash Redis')
     return Redis.fromEnv()
+  }
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('Redis not configured')
   }
 
   return {
