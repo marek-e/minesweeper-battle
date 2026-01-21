@@ -154,6 +154,7 @@ export function BattlesTable({ battles }: { battles: Battle[] }) {
     []
   )
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data: battles,
     columns,
