@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { insertBattle, initializeModelState } from '@/lib/db'
 import { AUTHORIZED_MODELS, MAX_ROWS, MAX_COLS, MAX_MINES } from '@/lib/battleConfig'
+import { generateMinePositions } from '@/lib/minesweeper'
 
 const createBattleSchema = z
   .object({
@@ -32,8 +33,11 @@ export async function POST(request: NextRequest) {
     const boardSeed = Math.floor(Math.random() * 2147483647)
     const battleId = `battle_${Date.now()}_${Math.random().toString(36).substring(7)}`
     
+    // Pre-generate mine positions for all models to play the same grid
+    const minePositions = generateMinePositions({ rows, cols, mineCount }, boardSeed)
+    
     // Create battle in DB
-    await insertBattle(battleId, { rows, cols, mineCount }, models, boardSeed)
+    await insertBattle(battleId, { rows, cols, mineCount }, models, boardSeed, minePositions)
     console.log('Battle created in DB:', battleId)
 
     // Initialize model states in DB

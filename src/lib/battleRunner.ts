@@ -3,7 +3,6 @@ import { z } from 'zod'
 import {
   createBoard,
   flagCell,
-  generateMinePositions,
   revealCell,
   encodeBoard,
   encodeBoardForLLM,
@@ -62,7 +61,7 @@ export async function executeModelMove(
     throw new Error(`Battle ${battleId} not found`)
   }
 
-  const { config, boardSeed } = battleMeta
+  const { config, minePositions } = battleMeta
 
   // Initialize or load model state
   await initializeModelState(battleId, modelId)
@@ -166,8 +165,8 @@ Use makeMove for single cautious moves, and makeMoves for batches of confident m
             }),
             execute: async ({ action, row, col }) => {
               if (!board) {
-                const minePositions = generateMinePositions(config, boardSeed, { row, col })
-                board = createBoard(config, { row, col }, minePositions)
+                // Use pre-generated mine positions for identical grid across all models
+                board = createBoard(config, undefined, minePositions)
               }
 
               const cell = board[row][col]
@@ -242,11 +241,8 @@ Use makeMove for single cautious moves, and makeMoves for batches of confident m
 
                 // Initialize board on first move if needed
                 if (!board) {
-                  const minePositions = generateMinePositions(config, boardSeed, {
-                    row: move.row,
-                    col: move.col,
-                  })
-                  board = createBoard(config, { row: move.row, col: move.col }, minePositions)
+                  // Use pre-generated mine positions for identical grid across all models
+                  board = createBoard(config, undefined, minePositions)
                 }
 
                 const cell = board[move.row][move.col]

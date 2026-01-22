@@ -88,6 +88,7 @@ type BattleMetadata = {
   status: string
   rankings: GameResult[] | null
   boardSeed: number
+  minePositions: [number, number][]
   createdAt: number
   completedAt: number | null
 }
@@ -96,7 +97,8 @@ export async function insertBattle(
   id: string,
   config: GameConfig,
   models: AuthorizedModel[],
-  boardSeed: number
+  boardSeed: number,
+  minePositions: [number, number][]
 ): Promise<void> {
   const kvClient = getKv()
   const metadata: BattleMetadata = {
@@ -106,6 +108,7 @@ export async function insertBattle(
     status: 'pending',
     rankings: null,
     boardSeed,
+    minePositions,
     createdAt: Date.now(),
     completedAt: null,
   }

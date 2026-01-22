@@ -65,6 +65,8 @@ function ArenaContent() {
 
   const battleLoopRef = useRef<boolean>(false)
   const modelStatesRef = useRef<Map<string, ModelState>>(new Map())
+  const modelLoopRefs = useRef<Map<string, boolean>>(new Map())
+  const activeModelsRef = useRef<string[]>([])
 
   useEffect(() => {
     if (!battleId) {
@@ -151,118 +153,150 @@ function ArenaContent() {
     }
 
     const startBattleLoop = (battleId: string, models: string[]) => {
-      const executeMoves = async (): Promise<void> => {
-        // Check which models need moves based on current ref state
-        const incompleteModels = models.filter((modelId) => {
+      // Store active models for cleanup
+      activeModelsRef.current = models
+      
+      // Independent loop for each model - faster models update UI immediately
+      const runModelLoop = async (modelId: string) => {
+        // Mark this model's loop as running
+        modelLoopRefs.current.set(modelId, true)
+        
+        while (battleLoopRef.current && modelLoopRefs.current.get(modelId)) {
+          // Check if this model is complete
           const state = modelStatesRef.current.get(modelId)
-          const isIncomplete = !state || state.status !== 'complete'
-          console.log(`Model ${modelId} state:`, state?.status, 'incomplete?', isIncomplete)
-          return isIncomplete
-        })
-
-        console.log('Incomplete models:', incompleteModels)
-
-        if (incompleteModels.length === 0) {
-          // All models complete, stop loop
-          console.log('All models complete, fetching final rankings')
-          
-          // Fetch final rankings
-          try {
-            const response = await fetch(`/api/battle/${battleId}/state`)
-            if (response.ok) {
-              const data = await response.json()
-              setBattleState((prev) => ({
-                ...prev,
-                status: 'complete',
-                rankings: data.rankings,
-              }))
-            }
-          } catch (error) {
-            console.error('Error fetching final rankings:', error)
+          if (state?.status === 'complete') {
+            console.log(`Model ${modelId} is complete, stopping its loop`)
+            break
           }
-          
-          return
-        }
 
-        // Execute moves for all incomplete models in parallel
-        console.log(`Executing moves for ${incompleteModels.length} models`)
-        await Promise.all(
-          incompleteModels.map(async (modelId) => {
-            try {
-              console.log(`Fetching move for ${modelId}`)
-              const response = await fetch(`/api/battle/${battleId}/move?model=${modelId}`)
-              if (!response.ok) {
-                console.error(`Failed to execute move for ${modelId}:`, await response.text())
-                return
-              }
-              
-              const result = await response.json()
-              console.log(`Move result for ${modelId}:`, result)
-
-              // Update UI from API response
-              setBattleState((prev) => {
-                const modelState = prev.modelStates.get(modelId)
-                if (!modelState || !prev.config) return prev
-
-                const boardState = result.compactBoard
-                  ? visibleBoardToBoardState(decodeBoard(result.compactBoard, prev.config.rows, prev.config.cols))
-                  : null
-
-                const newModelState: ModelState = {
-                  boardState,
-                  compactBoard: result.compactBoard || null,
-                  status: result.completed ? 'complete' : 'playing',
-                  outcome: result.outcome,
-                  moves: result.moves,
-                  safeRevealed: result.safeRevealed,
-                  minesHit: result.minesHit,
-                  durationMs: result.durationMs,
-                }
-
-                const newModelStates = new Map(prev.modelStates)
-                newModelStates.set(modelId, newModelState)
-                
-                // Update ref for immediate access
-                modelStatesRef.current = newModelStates
-
-                // If all models complete, update rankings
-                if (result.allModelsComplete && result.rankings) {
-                  return {
-                    ...prev,
-                    modelStates: newModelStates,
-                    status: 'complete',
-                    rankings: result.rankings,
-                  }
-                }
-
-                return { ...prev, modelStates: newModelStates }
-              })
-            } catch (error) {
-              console.error(`Error executing move for ${modelId}:`, error)
+          try {
+            console.log(`Fetching move for ${modelId}`)
+            const response = await fetch(`/api/battle/${battleId}/move?model=${modelId}`)
+            
+            if (!response.ok) {
+              console.error(`Failed to execute move for ${modelId}:`, await response.text())
+              // Wait a bit before retrying to avoid spamming
+              await new Promise(resolve => setTimeout(resolve, 1000))
+              continue
             }
-          })
-        )
+            
+            const result = await response.json()
+            console.log(`Move result for ${modelId}:`, result)
 
-        // Recursively call executeMoves to continue the loop
-        // This ensures we wait for all current moves to complete before starting new ones
-        if (battleLoopRef.current) {
-          await executeMoves()
+            // Update UI from API response for this model only
+            setBattleState((prev) => {
+              const modelState = prev.modelStates.get(modelId)
+              if (!modelState || !prev.config) return prev
+
+              const boardState = result.compactBoard
+                ? visibleBoardToBoardState(decodeBoard(result.compactBoard, prev.config.rows, prev.config.cols))
+                : null
+
+              const newModelState: ModelState = {
+                boardState,
+                compactBoard: result.compactBoard || null,
+                status: result.completed ? 'complete' : 'playing',
+                outcome: result.outcome,
+                moves: result.moves,
+                safeRevealed: result.safeRevealed,
+                minesHit: result.minesHit,
+                durationMs: result.durationMs,
+              }
+
+              const newModelStates = new Map(prev.modelStates)
+              newModelStates.set(modelId, newModelState)
+              
+              // Update ref for immediate access
+              modelStatesRef.current = newModelStates
+
+              // If all models complete, update rankings
+              if (result.allModelsComplete && result.rankings) {
+                // Stop all model loops
+                modelLoopRefs.current.forEach((_, id) => {
+                  modelLoopRefs.current.set(id, false)
+                })
+                battleLoopRef.current = false
+                
+                return {
+                  ...prev,
+                  modelStates: newModelStates,
+                  status: 'complete',
+                  rankings: result.rankings,
+                }
+              }
+
+              return { ...prev, modelStates: newModelStates }
+            })
+
+            // If this model completed, stop its loop
+            if (result.completed) {
+              console.log(`Model ${modelId} completed`)
+              modelLoopRefs.current.set(modelId, false)
+              break
+            }
+
+            // Check if all models are complete
+            const allComplete = models.every((id) => {
+              const s = modelStatesRef.current.get(id)
+              return s?.status === 'complete'
+            })
+
+            if (allComplete) {
+              console.log('All models complete, fetching final rankings')
+              battleLoopRef.current = false
+              modelLoopRefs.current.forEach((_, id) => {
+                modelLoopRefs.current.set(id, false)
+              })
+              
+              // Fetch final rankings
+              try {
+                const response = await fetch(`/api/battle/${battleId}/state`)
+                if (response.ok) {
+                  const data = await response.json()
+                  setBattleState((prev) => ({
+                    ...prev,
+                    status: 'complete',
+                    rankings: data.rankings,
+                  }))
+                }
+              } catch (error) {
+                console.error('Error fetching final rankings:', error)
+              }
+              break
+            }
+
+            // Continue immediately for this model (no waiting for other models)
+          } catch (error) {
+            console.error(`Error executing move for ${modelId}:`, error)
+            // Wait a bit before retrying on error
+            await new Promise(resolve => setTimeout(resolve, 1000))
+          }
         }
+        
+        // Mark this model's loop as stopped
+        modelLoopRefs.current.set(modelId, false)
       }
 
-      // Start the recursive loop
-      executeMoves().catch((error) => {
-        console.error('Battle loop error:', error)
-        battleLoopRef.current = false
+      // Start independent loops for all models concurrently
+      models.forEach((modelId) => {
+        runModelLoop(modelId).catch((error) => {
+          console.error(`Model loop error for ${modelId}:`, error)
+          modelLoopRefs.current.set(modelId, false)
+        })
       })
     }
 
     loadBattleState()
 
     return () => {
-      // Stop the battle loop by setting the ref to false
-      // This will prevent the next recursive call from executing
+      // Stop all battle loops
       battleLoopRef.current = false
+      // Stop all individual model loops
+      const modelsToStop = activeModelsRef.current
+      const loopRefs = modelLoopRefs.current
+      modelsToStop.forEach((modelId) => {
+        loopRefs.set(modelId, false)
+      })
     }
   }, [battleId])
 
