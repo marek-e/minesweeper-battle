@@ -95,7 +95,6 @@ function SetupContent() {
   const [isStarting, setIsStarting] = useState(false)
 
   const { rows, cols, mineCount, models } = config
-  console.log('🚀 ~ SetupContent ~ models:', models)
 
   const handleDifficultyClick = (difficulty: Difficulty) => {
     const preset = DIFFICULTIES[difficulty]

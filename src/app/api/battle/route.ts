@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { battleStore } from '@/lib/battleStore'
-import { runBattle } from '@/lib/battleRunner'
+import { insertBattle, initializeModelState } from '@/lib/db'
 import { AUTHORIZED_MODELS, MAX_ROWS, MAX_COLS, MAX_MINES } from '@/lib/battleConfig'
 
 const createBattleSchema = z
@@ -31,11 +30,14 @@ export async function POST(request: NextRequest) {
     const { rows, cols, mineCount, models } = result.data
 
     const boardSeed = Math.floor(Math.random() * 2147483647)
-    const battleId = battleStore.createBattle({ rows, cols, mineCount }, models, boardSeed)
+    const battleId = `battle_${Date.now()}_${Math.random().toString(36).substring(7)}`
+    
+    // Create battle in DB
+    await insertBattle(battleId, { rows, cols, mineCount }, models, boardSeed)
+    console.log('Battle created in DB:', battleId)
 
-    runBattle(battleId).catch((error) => {
-      console.error(`[Battle ${battleId}] Error:`, error)
-    })
+    // Initialize model states in DB
+    await Promise.all(models.map((modelId) => initializeModelState(battleId, modelId)))
 
     return NextResponse.json({ battleId })
   } catch (error) {

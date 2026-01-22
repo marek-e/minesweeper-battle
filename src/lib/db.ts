@@ -1,5 +1,5 @@
 import { Redis } from '@upstash/redis'
-import { GameConfig, GameResult, BoardState } from './types'
+import { GameConfig, GameResult, BoardState, GameOutcome } from './types'
 import { AuthorizedModel } from './battleConfig'
 
 const inMemoryStore = new Map<string, unknown>()
@@ -111,6 +111,11 @@ export async function insertBattle(
   }
 
   await kvClient.set(`battle:${id}`, metadata)
+}
+
+export async function getBattleMetadata(battleId: string): Promise<BattleMetadata | null> {
+  const kvClient = getKv()
+  return await kvClient.get<BattleMetadata>(`battle:${battleId}`)
 }
 
 export async function updateBattleCompletion(
@@ -290,4 +295,52 @@ export async function countBattles(status: string | null = null): Promise<number
       (b): b is BattleMetadata => b !== null && (!status || b.status === status)
     ).length
   }
+}
+
+export type PersistedModelState = {
+  boardState: BoardState | null
+  prevBoardState: BoardState | null
+  moves: number
+  safeRevealed: number
+  minesHit: 0 | 1
+  outcome: GameOutcome | undefined
+  startTime: number
+}
+
+export async function getModelState(
+  battleId: string,
+  modelId: AuthorizedModel
+): Promise<PersistedModelState | null> {
+  const kvClient = getKv()
+  const key = `battle:${battleId}:state:${modelId}`
+  return await kvClient.get<PersistedModelState>(key)
+}
+
+export async function updateModelState(
+  battleId: string,
+  modelId: AuthorizedModel,
+  state: PersistedModelState
+): Promise<void> {
+  const kvClient = getKv()
+  const key = `battle:${battleId}:state:${modelId}`
+  await kvClient.set(key, state)
+}
+
+export async function initializeModelState(
+  battleId: string,
+  modelId: AuthorizedModel
+): Promise<void> {
+  const existing = await getModelState(battleId, modelId)
+  if (existing) return // Already initialized
+
+  const initialState: PersistedModelState = {
+    boardState: null,
+    prevBoardState: null,
+    moves: 0,
+    safeRevealed: 0,
+    minesHit: 0,
+    outcome: undefined,
+    startTime: Date.now(),
+  }
+  await updateModelState(battleId, modelId, initialState)
 }

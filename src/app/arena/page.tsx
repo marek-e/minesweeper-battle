@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils'
 
 type ModelState = {
   boardState: BoardState | null
-  compactBoard: CompactBoard | null // Compact encoded board
+  compactBoard: CompactBoard | null
   status: 'pending' | 'playing' | 'complete'
   outcome?: GameOutcome
   moves: number
@@ -44,7 +44,7 @@ function visibleBoardToBoardState(visible: (string | number)[][]): BoardState {
 }
 
 type BattleState = {
-  status: 'idle' | 'connecting' | 'running' | 'complete' | 'error'
+  status: 'idle' | 'loading' | 'running' | 'complete' | 'error'
   config: GameConfig | null
   models: string[]
   modelStates: Map<string, ModelState>
@@ -63,139 +63,206 @@ function ArenaContent() {
     error: undefined,
   })
 
-  const eventSourceRef = useRef<EventSource | null>(null)
-
-  const initializeModels = (models: string[]) => {
-    const modelStates = new Map<string, ModelState>()
-    models.forEach((modelId) => {
-      modelStates.set(modelId, {
-        boardState: null,
-        compactBoard: null,
-        status: 'pending',
-        moves: 0,
-        safeRevealed: 0,
-        minesHit: 0,
-        durationMs: 0,
-      })
-    })
-    return modelStates
-  }
+  const battleLoopRef = useRef<boolean>(false)
+  const modelStatesRef = useRef<Map<string, ModelState>>(new Map())
 
   useEffect(() => {
-    if (!battleId) return
-
-    const eventSource = new EventSource(`/api/battle/${battleId}/stream`)
-    eventSourceRef.current = eventSource
-
-    queueMicrotask(() => {
-      setBattleState((prev) => ({ ...prev, status: 'connecting' }))
-    })
-
-    eventSource.onopen = () => {
-      setBattleState((prev) => ({ ...prev, status: 'running' }))
+    if (!battleId) {
+      console.log('No battleId, returning early')
+      return
     }
 
-    eventSource.addEventListener('init', (e) => {
-      const data = JSON.parse(e.data)
-      const { config, models } = data
+    console.log('Loading battle:', battleId)
 
-      setBattleState({
-        status: 'running',
-        config,
-        models,
-        modelStates: initializeModels(models),
-        rankings: null,
-      })
-    })
-
-    eventSource.addEventListener('move', (e) => {
-      const data = JSON.parse(e.data)
-      const { modelId, board: compactBoard } = data
-
-      setBattleState((prev) => {
-        const modelState = prev.modelStates.get(modelId)
-        if (!modelState || !prev.config) return prev
-
-        // Decode compact board
-        const visible = decodeBoard(compactBoard, prev.config.rows, prev.config.cols)
-        const boardState = visibleBoardToBoardState(visible)
-
-        const newModelState = {
-          ...modelState,
-          boardState,
-          compactBoard,
-          status: 'playing' as const,
-          moves: modelState.moves + 1,
+    const loadBattleState = async () => {
+      try {
+        setBattleState((prev) => ({ ...prev, status: 'loading' }))
+        
+        const response = await fetch(`/api/battle/${battleId}/state`)
+        if (!response.ok) {
+          throw new Error('Failed to load battle state')
         }
 
-        const newModelStates = new Map(prev.modelStates)
-        newModelStates.set(modelId, newModelState)
+        const data = await response.json()
+        console.log('Loaded battle state:', data)
 
-        return { ...prev, modelStates: newModelStates }
-      })
-    })
+        const modelStates = new Map<string, ModelState>()
+        for (const modelId of data.models) {
+          const state = data.modelStates[modelId]
+          const boardState = state.compactBoard
+            ? visibleBoardToBoardState(decodeBoard(state.compactBoard, data.config.rows, data.config.cols))
+            : null
 
-    eventSource.addEventListener('complete', (e) => {
-      const data = JSON.parse(e.data)
-      const { modelId, outcome, moves, safeRevealed, minesHit, durationMs } = data
+          modelStates.set(modelId, {
+            boardState,
+            compactBoard: state.compactBoard || null,
+            status: state.status,
+            outcome: state.outcome,
+            moves: state.moves,
+            safeRevealed: state.safeRevealed,
+            minesHit: state.minesHit,
+            durationMs: 0,
+          })
+        }
 
-      setBattleState((prev) => {
-        const modelState = prev.modelStates.get(modelId)
-        if (!modelState) return prev
-
-        const newModelStates = new Map(prev.modelStates)
-        newModelStates.set(modelId, {
-          ...modelState,
-          status: 'complete',
-          outcome,
-          moves,
-          safeRevealed,
-          minesHit,
-          durationMs,
+        // Update ref with initial model states
+        modelStatesRef.current = modelStates
+        
+        setBattleState({
+          status: 'running',
+          config: data.config,
+          models: data.models,
+          modelStates,
+          rankings: data.rankings,
         })
 
-        return { ...prev, modelStates: newModelStates }
-      })
-    })
+        // Start battle loop if not all models are complete
+        console.log('Model states from API:', data.modelStates)
+        const allComplete = data.models.every((modelId: string) => 
+          data.modelStates[modelId].status === 'complete'
+        )
+        console.log('All complete?', allComplete, 'battleLoopRef.current:', battleLoopRef.current)
 
-    eventSource.addEventListener('done', (e) => {
-      const data = JSON.parse(e.data)
-      const { rankings } = data
-
-      setBattleState((prev) => ({
-        ...prev,
-        status: 'complete',
-        rankings,
-      }))
-
-      eventSource.close()
-    })
-
-    eventSource.addEventListener('error', (e: MessageEvent) => {
-      const data = JSON.parse(e.data)
-      const { error: errorMessage, code } = data
-
-      setBattleState((prev) => ({
-        ...prev,
-        status: 'error',
-        error: {
-          message: errorMessage,
-          code: code || 'unknown',
-        },
-      }))
-
-      eventSource.close()
-    })
-
-    eventSource.onerror = (error) => {
-      console.error('SSE connection error:', error)
-      eventSource.close()
-      setBattleState((prev) => ({ ...prev, status: 'idle' }))
+        if (!allComplete && !battleLoopRef.current) {
+          battleLoopRef.current = true
+          console.log('Starting battle loop for models:', data.models)
+          startBattleLoop(battleId, data.models)
+        } else if (allComplete) {
+          console.log('All models complete, showing rankings')
+          setBattleState((prev) => ({
+            ...prev,
+            status: 'complete',
+            rankings: data.rankings,
+          }))
+        } else {
+          console.log('Not starting battle loop - already running or other condition')
+        }
+      } catch (error) {
+        console.error('Error loading battle state:', error)
+        setBattleState((prev) => ({
+          ...prev,
+          status: 'error',
+          error: {
+            message: error instanceof Error ? error.message : 'Failed to load battle',
+            code: 'unknown',
+          },
+        }))
+      }
     }
 
+    const startBattleLoop = (battleId: string, models: string[]) => {
+      const executeMoves = async (): Promise<void> => {
+        // Check which models need moves based on current ref state
+        const incompleteModels = models.filter((modelId) => {
+          const state = modelStatesRef.current.get(modelId)
+          const isIncomplete = !state || state.status !== 'complete'
+          console.log(`Model ${modelId} state:`, state?.status, 'incomplete?', isIncomplete)
+          return isIncomplete
+        })
+
+        console.log('Incomplete models:', incompleteModels)
+
+        if (incompleteModels.length === 0) {
+          // All models complete, stop loop
+          console.log('All models complete, fetching final rankings')
+          
+          // Fetch final rankings
+          try {
+            const response = await fetch(`/api/battle/${battleId}/state`)
+            if (response.ok) {
+              const data = await response.json()
+              setBattleState((prev) => ({
+                ...prev,
+                status: 'complete',
+                rankings: data.rankings,
+              }))
+            }
+          } catch (error) {
+            console.error('Error fetching final rankings:', error)
+          }
+          
+          return
+        }
+
+        // Execute moves for all incomplete models in parallel
+        console.log(`Executing moves for ${incompleteModels.length} models`)
+        await Promise.all(
+          incompleteModels.map(async (modelId) => {
+            try {
+              console.log(`Fetching move for ${modelId}`)
+              const response = await fetch(`/api/battle/${battleId}/move?model=${modelId}`)
+              if (!response.ok) {
+                console.error(`Failed to execute move for ${modelId}:`, await response.text())
+                return
+              }
+              
+              const result = await response.json()
+              console.log(`Move result for ${modelId}:`, result)
+
+              // Update UI from API response
+              setBattleState((prev) => {
+                const modelState = prev.modelStates.get(modelId)
+                if (!modelState || !prev.config) return prev
+
+                const boardState = result.compactBoard
+                  ? visibleBoardToBoardState(decodeBoard(result.compactBoard, prev.config.rows, prev.config.cols))
+                  : null
+
+                const newModelState: ModelState = {
+                  boardState,
+                  compactBoard: result.compactBoard || null,
+                  status: result.completed ? 'complete' : 'playing',
+                  outcome: result.outcome,
+                  moves: result.moves,
+                  safeRevealed: result.safeRevealed,
+                  minesHit: result.minesHit,
+                  durationMs: result.durationMs,
+                }
+
+                const newModelStates = new Map(prev.modelStates)
+                newModelStates.set(modelId, newModelState)
+                
+                // Update ref for immediate access
+                modelStatesRef.current = newModelStates
+
+                // If all models complete, update rankings
+                if (result.allModelsComplete && result.rankings) {
+                  return {
+                    ...prev,
+                    modelStates: newModelStates,
+                    status: 'complete',
+                    rankings: result.rankings,
+                  }
+                }
+
+                return { ...prev, modelStates: newModelStates }
+              })
+            } catch (error) {
+              console.error(`Error executing move for ${modelId}:`, error)
+            }
+          })
+        )
+
+        // Recursively call executeMoves to continue the loop
+        // This ensures we wait for all current moves to complete before starting new ones
+        if (battleLoopRef.current) {
+          await executeMoves()
+        }
+      }
+
+      // Start the recursive loop
+      executeMoves().catch((error) => {
+        console.error('Battle loop error:', error)
+        battleLoopRef.current = false
+      })
+    }
+
+    loadBattleState()
+
     return () => {
-      eventSource.close()
-      eventSourceRef.current = null
+      // Stop the battle loop by setting the ref to false
+      // This will prevent the next recursive call from executing
+      battleLoopRef.current = false
     }
   }, [battleId])
 
@@ -216,8 +283,6 @@ function ArenaContent() {
     Array.from(battleState.modelStates.values()).every((s) => s.status === 'complete')
 
   const { config } = battleState
-
-  console.log(config)
 
   return (
     <main className="flex flex-col items-center p-8">
@@ -244,11 +309,11 @@ function ArenaContent() {
           </Button>
         </div>
 
-        {/* Connection Status */}
-        {battleState.status === 'connecting' && (
+        {/* Loading Status */}
+        {battleState.status === 'loading' && (
           <div className="mb-8 text-center">
             <Loader2 className="mx-auto h-8 w-8 animate-spin text-blue-400" />
-            <p className="mt-2 text-slate-400">Connecting to battle...</p>
+            <p className="mt-2 text-slate-400">Loading battle...</p>
           </div>
         )}
 

@@ -270,6 +270,62 @@ Models get up to 3 retries per move on failure. After 3 consecutive failures →
 
 Games are capped at 60 moves to prevent infinite loops.
 
+## Flow
+```mermaid
+sequenceDiagram
+    participant User
+    participant Setup as /setup Page
+    participant Arena as /arena Page
+    participant CreateAPI as POST /api/battle
+    participant StateAPI as GET /api/battle/[id]/state
+    participant MoveAPI as GET /api/battle/[id]/move
+    participant DB as Upstash Redis
+    participant LLM as AI Gateway
+
+    User->>Setup: Configure battle
+    Setup->>CreateAPI: POST {config, models}
+    CreateAPI->>DB: insertBattle(metadata)
+    CreateAPI->>DB: initializeModelState(each model)
+    CreateAPI-->>Setup: {battleId}
+    Setup->>Arena: Redirect to /arena?battleId=X
+
+    Arena->>StateAPI: GET /state
+    StateAPI->>DB: getBattleMetadata()
+    StateAPI->>DB: getModelState(each model)
+    StateAPI-->>Arena: {config, models, modelStates}
+    
+    Note over Arena: Start battle loop (500ms interval)
+    
+    loop Until all models complete
+        par For each incomplete model
+            Arena->>MoveAPI: GET /move?model=gpt-5-mini
+            MoveAPI->>DB: getModelState(model)
+            MoveAPI->>DB: getBattleMetadata()
+            MoveAPI->>LLM: generateText(board state)
+            LLM-->>MoveAPI: Tool call (makeMove/makeMoves)
+            MoveAPI->>MoveAPI: Execute move logic
+            MoveAPI->>DB: updateModelState()
+            MoveAPI->>DB: insertFrame()
+            
+            alt Model complete
+                MoveAPI->>DB: insertResult()
+                MoveAPI->>DB: Check if all models complete
+                alt All complete
+                    MoveAPI-->>Arena: {completed: true, rankings: [...]}
+                    Note over Arena: Stop loop, show rankings
+                else
+                    MoveAPI-->>Arena: {completed: true, outcome}
+                end
+            else Model still playing
+                MoveAPI-->>Arena: {completed: false, boardState}
+            end
+            
+            Arena->>Arena: Update UI from response
+        end
+    end
+    
+    Arena->>User: Display final rankings
+```
 ---
 
 ## Human Play Mode
