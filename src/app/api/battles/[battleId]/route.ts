@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getCompletedBattle } from '@/lib/db'
+import { getCompletedBattle } from '@/lib/database/db'
 import { BoardState, GameResult } from '@/lib/types'
 
 export async function GET(
@@ -9,6 +9,7 @@ export async function GET(
   try {
     const { battleId } = await params
     const battle = await getCompletedBattle(battleId)
+    console.log('🚀 ~ GET ~ battle:', battle)
 
     if (!battle) {
       return NextResponse.json({ error: 'Battle not found' }, { status: 404 })

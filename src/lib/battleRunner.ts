@@ -10,15 +10,10 @@ import {
 import type { BoardState, GameOutcome } from '@/lib/types'
 import { AuthorizedModel } from '@/lib/battleConfig'
 import { calculateScore } from './scoring'
-import {
-  getBattleMetadata,
-  getModelState,
-  updateModelState,
-  initializeModelState,
-  insertFrame,
-  insertResult,
-} from './db'
+import { insertFrame, insertResult } from './database/db'
 import type { GameResult } from './types'
+import { getBattleMetadata } from './database/battle'
+import { initializeModelState, getModelState, updateModelState } from './database/modelState'
 
 const models: Record<AuthorizedModel, LanguageModel> = {
   'gpt-5-mini': 'openai/gpt-5-mini',
@@ -189,7 +184,7 @@ Use makeMove for single cautious moves, and makeMoves for batches of confident m
               moveSuccessful = true
 
               const boardStateCopy = JSON.parse(JSON.stringify(board)) as BoardState
-              
+
               // Save frame
               const frameIndex = modelState.moves
               await insertFrame(battleId, modelId, frameIndex, action, row, col, boardStateCopy)
@@ -419,7 +414,7 @@ Use makeMove for single cautious moves, and makeMoves for batches of confident m
   // Check if all models are complete
   let allModelsComplete = false
   let rankings: GameResult[] | undefined
-  
+
   if (outcome !== 'playing') {
     const allResults: GameResult[] = []
     let allComplete = true

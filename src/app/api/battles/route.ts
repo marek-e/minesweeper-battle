@@ -1,5 +1,5 @@
+import { listBattles, countBattles } from '@/lib/database/history'
 import { NextRequest, NextResponse } from 'next/server'
-import { listBattles, countBattles } from '@/lib/db'
 
 export async function GET(request: NextRequest) {
   try {

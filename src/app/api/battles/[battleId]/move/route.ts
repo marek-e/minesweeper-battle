@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { executeModelMove } from '@/lib/battleRunner'
-import { getBattleMetadata } from '@/lib/db'
+import { executeModelMove, MoveResult } from '@/lib/battleRunner'
 import { AUTHORIZED_MODELS } from '@/lib/battleConfig'
 import type { AuthorizedModel } from '@/lib/battleConfig'
+import { getBattleMetadata } from '@/lib/database/battle'
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ battleId: string }> }
-) {
+): Promise<NextResponse<MoveResult | { error: string }>> {
   try {
     const { battleId } = await params
     const searchParams = request.nextUrl.searchParams
@@ -35,14 +35,17 @@ export async function GET(
     }
 
     // Execute one move
-    console.log('Executing move for model:', modelId)
+    console.info('[API] Executing move for model:', modelId)
     const result = await executeModelMove(battleId, modelId)
-    console.log('Move result:', result)
+    console.info('[API] Move result:', result)
     return NextResponse.json(result)
   } catch (error) {
     console.error('Error executing move:', error)
     return NextResponse.json(
-      { error: 'Internal server error', message: error instanceof Error ? error.message : 'Unknown error' },
+      {
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      },
       { status: 500 }
     )
   }

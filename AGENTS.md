@@ -23,9 +23,13 @@ Maintain a **stable, reproducible, deterministic** Minesweeper evaluation platfo
                                 │
 ┌─────────────────────────────────────────────────────────────────────┐
 │                           BACKEND                                   │
-│  battleStore (in-memory) ←→ battleRunner (LLM loop) ←→ minesweeper │
-│         ↓                                                           │
-│     db.ts (Vercel KV / in-memory fallback)                         │
+│     battleRunner (LLM loop) ←→ minesweeper (game engine)           │
+│              ↓                                                      │
+│     database/ (Vercel KV / in-memory fallback)                     │
+│       - battle.ts (metadata)                                        │
+│       - modelState.ts (per-model state)                             │
+│       - history.ts (frames for replay)                              │
+│       - db.ts (KV client)                                           │
 └─────────────────────────────────────────────────────────────────────┘
                                 │
                     Vercel AI SDK + AI Gateway
@@ -84,42 +88,63 @@ Maintain a **stable, reproducible, deterministic** Minesweeper evaluation platfo
 4. Check win/loss/stuck condition
 5. Repeat until game ends
 
-### `/lib/battleStore.ts` — State Management
-
-**In-memory event-sourced state.**
-
-| Type          | Purpose                                      |
-| ------------- | -------------------------------------------- |
-| `BattleState` | Full battle state including all model states |
-| `ModelState`  | Per-model board, status, stats               |
-| `BattleEvent` | `init`, `move`, `complete`, `done` events    |
-
-**Methods:**
-
-- `createBattle()` — Initialize battle, persist to DB
-- `subscribe()` — SSE subscription
-- `emit()` — Broadcast event to subscribers + persist frame
-
-### `/lib/db.ts` — Persistence Layer
+### `/lib/database/` — Persistence Layer
 
 **Vercel KV with in-memory fallback.**
 
-| Function                   | Purpose                      |
-| -------------------------- | ---------------------------- |
-| `insertBattle()`           | Create battle metadata       |
-| `insertFrame()`            | Store frame for replay       |
-| `insertResult()`           | Store final result per model |
-| `updateBattleCompletion()` | Mark battle complete         |
-| `getCompletedBattle()`     | Fetch battle + all frames    |
-| `listBattles()`            | Paginated list               |
+#### `db.ts` — KV Client
+
+| Function  | Purpose                          |
+| --------- | -------------------------------- |
+| `getKv()` | Returns KV client (with fallback)|
+
+#### `battle.ts` — Battle Metadata
+
+| Function                   | Purpose              |
+| -------------------------- | -------------------- |
+| `insertBattle()`           | Create battle record |
+| `updateBattleCompletion()` | Mark battle complete |
+| `getBattle()`              | Fetch battle by ID   |
+| `listBattles()`            | Paginated list       |
+
+#### `modelState.ts` — Per-Model State
+
+| Function                | Purpose                    |
+| ----------------------- | -------------------------- |
+| `initializeModelState()`| Initialize empty state     |
+| `getModelState()`       | Fetch model's board state  |
+| `updateModelState()`    | Update board + stats       |
+
+**Type:**
+
+```typescript
+type PersistedModelState = {
+  boardState: BoardState | null
+  prevBoardState: BoardState | null
+  moves: number
+  safeRevealed: number
+  minesHit: 0 | 1
+  outcome: GameOutcome
+  startTime: number
+}
+```
+
+#### `history.ts` — Replay Frames
+
+| Function           | Purpose                      |
+| ------------------ | ---------------------------- |
+| `insertFrame()`    | Store frame for replay       |
+| `insertResult()`   | Store final result per model |
+| `getReplayData()`  | Fetch battle + all frames    |
 
 **Storage Schema:**
 
 ```
-battle:{id}              → BattleMetadata
-battle:{id}:frames:{model} → BattleFrame[]
-battle:{id}:results      → Record<model, GameResult>
-battles:completed        → Sorted set (score = timestamp)
+battle:{id}                  → BattleMetadata
+battle:{id}:state:{model}    → PersistedModelState
+battle:{id}:frames:{model}   → BattleFrame[]
+battle:{id}:results          → Record<model, GameResult>
+battles:completed            → Sorted set (score = timestamp)
 ```
 
 ### `/lib/scoring.ts` — Scoring Algorithm
@@ -289,7 +314,7 @@ const MODEL_NAMES: Record<AuthorizedModel, string> = {
 
 ### Adding New SSE Event
 
-1. Add type to `BattleEvent` union in `/lib/battleStore.ts`
+1. Add event emission logic in `/lib/battleRunner.ts`
 2. Add payload transformer in `/api/battle/[battleId]/stream/route.ts`
 3. Handle in `/app/arena/page.tsx` and `/app/replay/[battleId]/page.tsx`
 
@@ -312,9 +337,11 @@ types.ts ───────────────────────�
     │        │                                         │
     │        └── battleRunner.ts (LLM orchestration)  │
     │                 │                                │
-    │                 ├── battleStore.ts (state)      │
-    │                 │        │                       │
-    │                 │        └── db.ts (persistence)│
+    │                 ├── database/                    │
+    │                 │   ├── db.ts (KV client)       │
+    │                 │   ├── battle.ts (metadata)    │
+    │                 │   ├── modelState.ts (state)   │
+    │                 │   └── history.ts (frames)     │
     │                 │                                │
     │                 └── scoring.ts                  │
     │                                                  │
@@ -340,7 +367,7 @@ types.ts ───────────────────────�
 - Boards are deep-cloned (`JSON.parse(JSON.stringify())`) for state snapshots
 - SSE uses delta encoding when possible to reduce payload size
 - Batch moves (`makeMoves`) significantly reduce API round-trips
-- In-memory store is ephemeral; Vercel KV provides persistence
+- All state is persisted to Vercel KV (or in-memory fallback for local dev)
 
 ---
 

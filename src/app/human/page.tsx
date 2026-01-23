@@ -4,15 +4,10 @@ import { useReducer, useMemo, useState, useEffect } from 'react'
 import { BoardGrid } from '@/components/BoardGrid'
 import { Button } from '@/components/ui/Button'
 import { createBoard, revealCell, flagCell } from '@/lib/minesweeper'
-import type { BoardState, GameConfig, GameOutcome } from '@/lib/types'
+import type { BoardState, Difficulty, GameConfig, GameOutcome } from '@/lib/types'
 import { Flag, Eye, RefreshCw, X, Bomb, ChevronDown, Trophy } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
-
-const DIFFICULTIES: Record<string, GameConfig> = {
-  Easy: { rows: 9, cols: 9, mineCount: 10 },
-  Medium: { rows: 16, cols: 16, mineCount: 40 },
-  Hard: { rows: 16, cols: 30, mineCount: 99 },
-}
+import { DIFFICULTIES } from '@/lib/battleConfig'
 
 type GameState = {
   board: BoardState | null
@@ -100,7 +95,7 @@ const StatBox = ({ label, value }: { label: string; value: React.ReactNode }) =>
 )
 
 export default function HumanPage() {
-  const [difficulty, setDifficulty] = useState('Medium')
+  const [difficulty, setDifficulty] = useState<Difficulty>('intermediate')
   const [state, dispatch] = useReducer(gameReducer, createInitialState(DIFFICULTIES[difficulty]))
   const [time, setTime] = useState(0)
   const [activeTool, setActiveTool] = useState<'reveal' | 'flag'>('reveal')
@@ -176,7 +171,7 @@ export default function HumanPage() {
                 <select
                   id="difficulty"
                   value={difficulty}
-                  onChange={(e) => setDifficulty(e.target.value)}
+                  onChange={(e) => setDifficulty(e.target.value as Difficulty)}
                   className="w-full appearance-none rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 >
                   {Object.keys(DIFFICULTIES).map((d) => (

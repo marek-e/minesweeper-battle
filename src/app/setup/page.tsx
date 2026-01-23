@@ -5,7 +5,7 @@ import { useQueryStates } from 'nuqs'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/Button'
 import { ArrowRight, Loader2 } from 'lucide-react'
-import { Difficulty, GameConfig } from '@/lib/types'
+import { Difficulty } from '@/lib/types'
 import { gameSearchParams } from '@/lib/searchParams'
 import { createBattle } from '@/lib/api'
 import {
@@ -13,81 +13,11 @@ import {
   MAX_ROWS,
   MAX_COLS,
   MAX_MINES,
-  AuthorizedModel,
+  DIFFICULTIES,
+  MODEL_NAMES,
 } from '@/lib/battleConfig'
-
-const MODEL_NAMES: Record<AuthorizedModel, string> = {
-  'gpt-5-mini': 'GPT-5 Mini',
-  'gemini-2.5-flash': 'Gemini 2.5 Flash',
-  'claude-3.7-sonnet': 'Claude 3.7 Sonnet',
-  'grok-code-fast-1': 'Grok Code Fast 1',
-  'gpt-4.1-mini': 'GPT-4.1 Mini',
-  'gemini-3-pro-preview': 'Gemini 3 Pro Preview',
-  'claude-sonnet-4.5': 'Claude Sonnet 4.5',
-  'claude-haiku-4.5': 'Claude Haiku 4.5',
-  'grok-4-fast-reasoning': 'Grok 4 Fast Reasoning',
-  'deepseek-v3.2': 'DeepSeek V3.2',
-}
-
-const DIFFICULTIES: Record<Difficulty, GameConfig> = {
-  beginner: { rows: 9, cols: 9, mineCount: 10 },
-  intermediate: { rows: 16, cols: 16, mineCount: 40 },
-  expert: { rows: 16, cols: 30, mineCount: 99 },
-}
-
-const InputField = ({
-  label,
-  id,
-  max,
-  ...props
-}: {
-  label: string
-  max?: number
-} & React.ComponentProps<'input'>) => (
-  <div className="flex flex-col gap-2">
-    <label htmlFor={id} className="text-sm text-slate-400">
-      {label}
-      {max && <span className="ml-1 text-slate-500">(max: {max})</span>}
-    </label>
-    <input
-      id={id}
-      type="number"
-      max={max}
-      className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
-      {...props}
-    />
-  </div>
-)
-
-const CheckboxCard = ({
-  label,
-  id,
-  checked,
-  onChange,
-}: {
-  label: string
-  id: string
-  checked: boolean
-  onChange: (checked: boolean) => void
-}) => (
-  <label
-    htmlFor={id}
-    className={`flex cursor-pointer items-center gap-4 rounded-lg p-4 transition-colors ${
-      checked
-        ? 'border-blue-500 bg-blue-600/20'
-        : 'border-slate-700 bg-slate-800/50 hover:bg-slate-800'
-    } border`}
-  >
-    <input
-      type="checkbox"
-      id={id}
-      checked={checked}
-      onChange={(e) => onChange(e.target.checked)}
-      className="h-6 w-6 rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-600"
-    />
-    <span className="font-medium text-slate-200">{label}</span>
-  </label>
-)
+import { CheckboxCard } from './_components/CheckboxCard'
+import { InputField } from './_components/InputField'
 
 function SetupContent() {
   const router = useRouter()

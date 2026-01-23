@@ -1,10 +1,4 @@
-import {
-  parseAsInteger,
-  parseAsArrayOf,
-  parseAsString,
-  parseAsStringEnum,
-  createLoader,
-} from 'nuqs/server'
+import { parseAsInteger, parseAsArrayOf, parseAsString, parseAsStringEnum } from 'nuqs/server'
 import { AUTHORIZED_MODELS } from './battleConfig'
 
 export const gameSearchParams = {
@@ -17,5 +11,3 @@ export const gameSearchParams = {
   ]),
   battleId: parseAsString,
 }
-
-export const loadGameSearchParams = createLoader(gameSearchParams)
