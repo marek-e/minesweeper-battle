@@ -1,5 +1,5 @@
 import { AuthorizedModel } from '../battleConfig'
-import { GameConfig, GameResult } from '../types'
+import { GameConfig, Ranking } from '../types'
 import { BattleMetadata } from './battle'
 import { getKv } from './db'
 
@@ -13,7 +13,7 @@ export async function listBattles(
     config: GameConfig
     models: AuthorizedModel[]
     status: string
-    rankings: GameResult[] | null
+    rankings: Ranking | null
     createdAt: number
     completedAt: number | null
   }>

@@ -80,16 +80,78 @@ export async function executeModelMove(
     try {
       const boardString = board
         ? encodeBoardForLLM(board)
-        : 'The board is empty. Make your first move.'
+        : `The board is empty (all cells are 'H'). First move tip: corners or center are good starting points—they tend to open up larger areas. Pick any cell to start.`
 
-      const systemPrompt = `
-You are a Minesweeper player. Your goal is to win by revealing all safe cells.
-The board is a ${config.rows}x${config.cols} grid with ${config.mineCount} hidden mines.
-You will be given the current board state and must return your next move in JSON format.
-'H' means a hidden cell. 'F' means a flagged cell. A number (0-8) means a revealed cell showing adjacent mines.
-Rows and columns are 0-indexed. Your move must be on a hidden, unflagged cell.
-Choose your action and coordinates carefully based on the visible numbers.
-`
+      const systemPrompt = `You are an expert Minesweeper player. Your goal: reveal ALL safe cells without hitting a mine.
+
+## BOARD INFO
+- Grid: ${config.rows} rows × ${config.cols} cols (0-indexed)
+- Mines: ${config.mineCount} hidden mines
+- Symbols: 'H' = hidden, 'F' = flagged, 0-8 = revealed (number of adjacent mines)
+
+## CORE RULES
+1. A number indicates EXACTLY how many mines are in the 8 adjacent cells (orthogonal + diagonal)
+2. '0' means all 8 neighbors are safe → reveal them all
+3. If a number equals its hidden neighbor count, ALL those hidden cells are mines
+4. If a number's mine count is satisfied by flags, remaining hidden neighbors are SAFE
+
+## WINNING STRATEGIES
+
+### Pattern: Satisfied Numbers
+If a cell shows '1' and has exactly 1 flagged/known mine neighbor → all other hidden neighbors are SAFE.
+Example: A '2' with 2 adjacent flags means all other adjacent hidden cells are safe to reveal.
+
+### Pattern: Forced Mines
+If a '1' has only 1 hidden neighbor → that neighbor MUST be a mine.
+If a '2' has only 2 hidden neighbors → both MUST be mines.
+General: if number N has exactly N hidden neighbors, all are mines.
+
+### Pattern: 1-1 on Edge
+Two adjacent '1's on the edge with shared hidden cells: the mine is in the shared region.
+\`\`\`
+H H H    The mine must be in position shared by both 1s.
+1 1 0    The H next to only the left 1 is SAFE.
+\`\`\`
+
+### Pattern: 1-2 on Edge
+\`\`\`
+H H H    '1' accounts for 1 mine, '2' needs 2. 
+1 2 1    The outer H cells (near the 1s) are SAFE if 2's mines are in the middle.
+\`\`\`
+
+### Pattern: Corner Analysis
+Corner numbers have fewer neighbors (3 instead of 8). A '1' in a corner with 2 hidden neighbors means one is safe if 1 is flagged.
+
+## STRATEGY PRIORITY (follow this order)
+1. **Certain safe cells**: Reveal cells adjacent to satisfied numbers (number = adjacent flags)
+2. **Certain mines**: Flag cells where number = remaining hidden neighbors
+3. **Chain deductions**: After revealing, new numbers give new info—reassess the board
+4. **Probability guess**: When no certain moves exist, choose cells with lowest mine probability (prefer cells with more revealed number neighbors, corners/edges of unknown regions are riskier)
+
+## COMMON MISTAKES TO AVOID
+- Don't reveal cells adjacent to unsatisfied numbers without analysis
+- Don't guess randomly—always look for deductions first
+- Don't forget diagonal neighbors count too
+- Count carefully: each number refers to ALL 8 directions
+
+## EXAMPLE ANALYSIS
+\`\`\`
+   0 1 2 3
+0: 0 1 H H
+1: 0 1 H H
+2: 0 0 1 1
+\`\`\`
+Analysis:
+- The '1' at (0,1) has only (0,2) as hidden neighbor → (0,2) is a MINE
+- The '1' at (1,1) has (0,2), (1,2) as hidden neighbors. If (0,2) is mined, (1,2) is SAFE
+- The '1' at (2,2) touches (1,2), (1,3). If (1,2) is safe, check remaining constraints.
+- The '1' at (2,3) touches (1,2), (1,3). Combined with (2,2), deduce which is safe.
+
+## YOUR TASK
+Analyze the board systematically. Find the SAFEST move using logical deduction.
+When multiple safe moves exist, prefer revealing over flagging (reveals give more information).
+Only flag when you're certain AND it helps deduce other cells.
+Think step by step before choosing your move.`
 
       // IMPORTANT: You can submit multiple moves at once using makeMoves if you're confident they are safe.
       // This is faster than one move at a time. Batch obvious safe cells together (e.g., cells adjacent to 0s).
@@ -98,12 +160,20 @@ Choose your action and coordinates carefully based on the visible numbers.
       const { toolResults } = await generateText({
         model: models[modelId],
         system: systemPrompt,
-        prompt: `Current board:\n${boardString}\n\nWhat is your next move?`,
+        prompt: `Current board:
+${boardString}
+
+Analyze the board:
+1. Find all cells adjacent to satisfied numbers (safe to reveal)
+2. Find all cells that must be mines (flag if helpful)
+3. If no certain moves, identify lowest-risk cell
+
+Make your move:`,
         toolChoice: 'required',
         tools: {
           makeMove: tool({
             description:
-              'Make a single move by revealing or flagging a cell. Use for cautious moves.',
+              'Make a move. Use "reveal" on cells you believe are safe. Use "flag" only on confirmed mines when it helps deduce other cells. Prefer revealing—it gives more information.',
             inputSchema: z.object({
               action: z.enum(['reveal', 'flag']),
               row: z
@@ -116,7 +186,12 @@ Choose your action and coordinates carefully based on the visible numbers.
                 .int()
                 .min(0)
                 .max(config.cols - 1),
-              reasoning: z.string().describe('A short explanation for your move.').optional(),
+              reasoning: z
+                .string()
+                .describe(
+                  'Your deduction: which numbers did you analyze? Why is this cell safe/a mine?'
+                )
+                .optional(),
             }),
             execute: async ({ action, row, col }) => {
               if (!board) {
