@@ -1,5 +1,5 @@
 import { Redis } from '@upstash/redis'
-import { GameConfig, GameResult, BoardState } from '../types'
+import { GameConfig, GameResult, BoardState, Ranking } from '../types'
 import { AuthorizedModel } from '../battleConfig'
 import { BattleMetadata } from './battle'
 
@@ -86,7 +86,7 @@ export type CompletedBattle = {
   config: GameConfig
   models: AuthorizedModel[]
   status: string
-  rankings: GameResult[] | null
+  rankings: Ranking | null
   boardSeed: number
   createdAt: number
   completedAt: number | null
@@ -128,6 +128,11 @@ export async function insertResult(
   const results = (await kvClient.get<Record<string, GameResult>>(key)) || {}
   results[modelId] = result
   await kvClient.set(key, results)
+}
+
+export async function getResults(battleId: string): Promise<Record<string, GameResult>> {
+  const kvClient = getKv()
+  return (await kvClient.get<Record<string, GameResult>>(`battle:${battleId}:results`)) || {}
 }
 
 export async function getCompletedBattle(battleId: string): Promise<CompletedBattle | null> {

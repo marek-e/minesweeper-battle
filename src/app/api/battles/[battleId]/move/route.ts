@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { executeModelMove, MoveResult } from '@/lib/battleRunner'
+import {
+  calculateScoreAndInsertResult,
+  executeModelMove,
+  updateOnAllModelsComplete,
+} from '@/lib/battleRunner'
 import { AUTHORIZED_MODELS } from '@/lib/battleConfig'
 import type { AuthorizedModel } from '@/lib/battleConfig'
 import { getBattleMetadata } from '@/lib/database/battle'
+import { PersistedModelState } from '@/lib/database/modelState'
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ battleId: string }> }
-): Promise<NextResponse<MoveResult | { error: string }>> {
+): Promise<NextResponse<PersistedModelState | { error: string }>> {
   try {
     const { battleId } = await params
     const searchParams = request.nextUrl.searchParams
@@ -23,22 +28,24 @@ export async function GET(
 
     const modelId = modelParam as AuthorizedModel
 
-    // Verify battle exists
     const battleMeta = await getBattleMetadata(battleId)
     if (!battleMeta) {
       return NextResponse.json({ error: 'Battle not found' }, { status: 404 })
     }
 
-    // Verify model is part of this battle
     if (!battleMeta.models.includes(modelId)) {
       return NextResponse.json({ error: 'Model not part of this battle' }, { status: 400 })
     }
 
     // Execute one move
     console.info('[API] Executing move for model:', modelId)
-    const result = await executeModelMove(battleId, modelId)
-    console.info('[API] Move result:', result)
-    return NextResponse.json(result)
+    const state = await executeModelMove(battleId, modelId)
+    console.info('[API] Move result:', state)
+    if (state.outcome !== 'playing') {
+      await calculateScoreAndInsertResult(battleId, modelId, state)
+    }
+    await updateOnAllModelsComplete(battleId)
+    return NextResponse.json(state)
   } catch (error) {
     console.error('Error executing move:', error)
     return NextResponse.json(

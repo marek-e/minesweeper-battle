@@ -1,3 +1,5 @@
+import { AuthorizedModel } from './battleConfig'
+
 export type GameOutcome = 'win' | 'loss' | 'stuck' | 'error' | 'playing'
 
 export type CellState = {
@@ -16,6 +18,12 @@ export type CompactBoard = string
 
 // Delta update for changed cells: [row, col, value]
 export type CellDelta = [number, number, string | number]
+
+export type Ranking = {
+  modelId: string
+  rank: number
+  score: number
+}[]
 
 export type GameResult = {
   modelId: string

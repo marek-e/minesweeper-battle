@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { NuqsAdapter } from 'nuqs/adapters/next/app'
 import './globals.css'
 import { Bot } from 'lucide-react'
-import { QueryProvider } from '@/components/QueryProvider'
+import { QueryProvider } from '@/providers/QueryProvider'
 
 const geistSans = Geist({
   variable: '--font-geist-sans',

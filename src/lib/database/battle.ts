@@ -1,5 +1,5 @@
 import { AuthorizedModel } from '../battleConfig'
-import { GameConfig, GameResult } from '../types'
+import { GameConfig, Ranking } from '../types'
 import { getKv } from './db'
 
 export type BattleStatus = 'pending' | 'running' | 'complete'
@@ -9,7 +9,7 @@ export type BattleMetadata = {
   config: GameConfig
   models: AuthorizedModel[]
   status: BattleStatus
-  rankings: GameResult[] | null
+  rankings: Ranking | null
   boardSeed: number
   minePositions: [number, number][]
   createdAt: number
@@ -48,7 +48,7 @@ export async function getBattleMetadata(battleId: string): Promise<BattleMetadat
 export async function updateBattleCompletion(
   id: string,
   status: BattleStatus,
-  rankings: GameResult[] | null
+  rankings: Ranking | null
 ): Promise<void> {
   const kvClient = getKv()
   const metadata = (await kvClient.get<BattleMetadata>(`battle:${id}`))!
