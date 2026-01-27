@@ -56,6 +56,7 @@ export async function executeModelMove(
     const finalState: typeof modelState = {
       ...modelState,
       outcome: 'stuck',
+      endTime: Date.now(),
     }
     await updateModelState(battleId, modelId, finalState)
 
@@ -286,6 +287,7 @@ Choose your action and coordinates carefully based on the visible numbers.
         const finalState: typeof modelState = {
           ...modelState,
           outcome: 'error',
+          endTime: Date.now(),
         }
         await updateModelState(battleId, modelId, finalState)
 
@@ -306,6 +308,7 @@ Choose your action and coordinates carefully based on the visible numbers.
     safeRevealed,
     minesHit,
     outcome,
+    endTime: outcome !== 'playing' ? Date.now() : undefined,
   }
   await updateModelState(battleId, modelId, finalState)
   return finalState

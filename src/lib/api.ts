@@ -1,6 +1,6 @@
 import { BattleState } from '@/app/api/battles/[battleId]/state/route'
 import type { GameConfig } from './types'
-import { MoveResult } from './battleRunner'
+import { PersistedModelState } from './database/modelState'
 
 export async function createBattle(
   config: GameConfig,
@@ -35,7 +35,10 @@ export async function getBattleState(battleId: string): Promise<BattleState> {
   return response.json()
 }
 
-export async function executeModelMove(battleId: string, modelId: string): Promise<MoveResult> {
+export async function executeModelMove(
+  battleId: string,
+  modelId: string
+): Promise<PersistedModelState> {
   const response = await fetch(`/api/battles/${battleId}/move?model=${modelId}`)
   if (!response.ok) {
     throw new Error('Failed to make move')

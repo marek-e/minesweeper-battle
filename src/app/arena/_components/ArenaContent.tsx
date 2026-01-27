@@ -2,8 +2,7 @@
 
 import { Button } from '@/components/ui/Button'
 import { RankingTable } from '@/components/RankingTable'
-import { BoardState } from '@/lib/types'
-import { decodeBoard } from '@/lib/minesweeper'
+import { BoardState, GameResult } from '@/lib/types'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { Loader2 } from 'lucide-react'
 import { BoardGrid } from '@/components/BoardGrid'
@@ -12,27 +11,6 @@ import { PersistedModelState } from '@/lib/database/modelState'
 import { executeModelMove, getBattleState } from '@/lib/api'
 import { BattleMetadata } from '@/lib/database/battle'
 import { BattleState } from '@/app/api/battles/[battleId]/state/route'
-
-// Convert decoded visible board to BoardState format for rendering
-function visibleBoardToBoardState(visible: (string | number)[][]): BoardState {
-  return visible.map((row, rowIdx) =>
-    row.map((cell, colIdx) => {
-      const isMine = cell === 'M'
-      const isRevealed = typeof cell === 'number' || cell === 'M' || (cell !== 'H' && cell !== 'F')
-      const isFlagged = cell === 'F'
-      const adjacentMines = typeof cell === 'number' ? cell : 0
-
-      return {
-        row: rowIdx,
-        col: colIdx,
-        isMine,
-        isRevealed,
-        isFlagged,
-        adjacentMines,
-      }
-    })
-  )
-}
 
 type ArenaContentProps = {
   battleId: string
@@ -51,65 +29,19 @@ export function ArenaContent({ battleId, modelStates, battleMetadata }: ArenaCon
   const battleLoopRef = useRef<boolean>(false)
   const modelStatesRef = useRef<Record<string, PersistedModelState>>(modelStates)
   const modelLoopRefs = useRef<Record<string, boolean>>({})
-  const activeModelsRef = useRef<string[]>(Object.keys(modelStates))
+  const activeModelsRef = useRef<string[]>([])
 
   useEffect(() => {
-    // const loadBattleState = async () => {
-    //   try {
-    //     setBattleState((prev) => ({ ...prev, status: 'loading' }))
-
-    //     const state = await getBattleState(battleId)
-    //     console.debug('Loaded battle state:', state)
-
-    //     // Update ref with initial model states
-    //     modelStatesRef.current = state.modelStates
-
-    //     setBattleState({
-    //       status: 'running',
-    //       battleMetadata: state.battleMetadata,
-    //       modelStates: state.modelStates,
-    //     })
-
-    //     // Start battle loop if not all models are complete
-    //     console.log('Model states from API:', state.modelStates)
-    //     const allComplete = Object.values(state.modelStates).every(
-    //       (modelState) => modelState.outcome !== 'playing'
-    //     )
-    //     console.log('All complete?', allComplete, 'battleLoopRef.current:', battleLoopRef.current)
-
-    //     if (!allComplete && !battleLoopRef.current) {
-    //       battleLoopRef.current = true
-    //       console.log('Starting battle loop for models:', Object.keys(state.modelStates))
-    //       startBattleLoop(battleId, Object.keys(state.modelStates))
-    //     } else if (allComplete) {
-    //       console.log('All models complete, showing rankings')
-    //       setBattleState((prev) => ({
-    //         ...prev,
-    //         status: 'complete',
-    //         rankings: state.battleMetadata?.rankings || null,
-    //       }))
-    //     } else {
-    //       console.log('Not starting battle loop - already running or other condition')
-    //     }
-    //   } catch (error) {
-    //     console.error('Error loading battle state:', error)
-    //     setBattleState((prev) => ({
-    //       ...prev,
-    //       status: 'error',
-    //       error: {
-    //         message: error instanceof Error ? error.message : 'Failed to load battle',
-    //         code: 'unknown',
-    //       },
-    //     }))
-    //   }
-    // }
-
     const startBattleLoop = (battleId: string, models: string[]) => {
-      battleLoopRef.current = true
       activeModelsRef.current = models
 
       // Independent loop for each model - faster models update UI immediately
       const runModelLoop = async (modelId: string) => {
+        // Guard against duplicate loops (React StrictMode)
+        if (modelLoopRefs.current[modelId]) {
+          console.log(`Model ${modelId} loop already running, skipping`)
+          return
+        }
         modelLoopRefs.current[modelId] = true
 
         while (battleLoopRef.current && modelLoopRefs.current[modelId]) {
@@ -123,93 +55,67 @@ export function ArenaContent({ battleId, modelStates, battleMetadata }: ArenaCon
             console.log(`Fetching move for ${modelId}`)
             const result = await executeModelMove(battleId, modelId)
 
-            if (!result.success) {
-              console.error(`Failed to execute move for ${modelId}:`, result.error)
-              // Wait a bit before retrying to avoid spamming
-              await new Promise((resolve) => setTimeout(resolve, 1000))
-              continue
-            }
-
             console.log(`Move result for ${modelId}:`, result)
 
             // Update UI from API response for this model only
-            setBattleState((prev) => {
-              const modelState = prev.modelStates[modelId]
-              if (!modelState || !prev.battleMetadata?.config) return prev
+            const newModelState: PersistedModelState = {
+              boardState: result.boardState,
+              prevBoardState: modelStatesRef.current[modelId]?.boardState || null,
+              outcome: result.outcome,
+              moves: result.moves,
+              safeRevealed: result.safeRevealed,
+              minesHit: result.minesHit,
+              startTime: result.startTime,
+              endTime: result.endTime,
+            }
 
-              const boardState = result.compactBoard
-                ? visibleBoardToBoardState(
-                    decodeBoard(
-                      result.compactBoard,
-                      prev.battleMetadata.config.rows,
-                      prev.battleMetadata.config.cols
-                    )
-                  )
-                : null
+            // Update ref immediately for next iteration
+            modelStatesRef.current = {
+              ...modelStatesRef.current,
+              [modelId]: newModelState,
+            }
 
-              const newModelState: PersistedModelState = {
-                boardState,
-                prevBoardState: prev.modelStates[modelId]?.boardState || null,
-                outcome: result.outcome || 'playing',
-                moves: result.moves,
-                safeRevealed: result.safeRevealed,
-                minesHit: result.minesHit,
-                startTime: prev.modelStates[modelId]?.startTime || Date.now(),
-              }
+            setBattleState((prev) => ({
+              ...prev,
+              modelStates: { ...prev.modelStates, [modelId]: newModelState },
+            }))
 
-              const newModelStates = { ...prev.modelStates, [modelId]: newModelState }
+            // If this model completed, stop its loop
+            if (result.outcome !== 'playing') {
+              console.log(`Model ${modelId} completed with outcome: ${result.outcome}`)
+              modelLoopRefs.current[modelId] = false
 
-              // Update ref for immediate access
-              modelStatesRef.current = newModelStates
+              // Check if all models are complete
+              const allComplete = models.every((id) => {
+                if (id === modelId) return true // Current model just completed
+                const s = modelStatesRef.current[id]
+                return s?.outcome !== 'playing'
+              })
 
-              // If all models complete, update rankings
-              if (result.allModelsComplete && result.rankings) {
-                // Stop all model loops
+              if (allComplete) {
+                console.log('All models complete, fetching final rankings')
+                battleLoopRef.current = false
                 Object.keys(modelLoopRefs.current).forEach((id) => {
                   modelLoopRefs.current[id] = false
                 })
-                battleLoopRef.current = false
 
-                return {
-                  ...prev,
-                  modelStates: newModelStates,
-                  status: 'complete',
-                  battleMetadata: prev.battleMetadata
-                    ? { ...prev.battleMetadata, rankings: result.rankings }
-                    : null,
+                // Fetch final rankings
+                try {
+                  const state = await getBattleState(battleId)
+                  setBattleState((prev) => ({
+                    ...prev,
+                    status: 'complete',
+                    battleMetadata: state.battleMetadata,
+                  }))
+                } catch (error) {
+                  console.error('Failed to fetch final rankings:', error)
+                  setBattleState((prev) => ({
+                    ...prev,
+                    status: 'error',
+                    error: { message: 'Failed to fetch final rankings', code: 'unknown' },
+                  }))
                 }
               }
-
-              return { ...prev, modelStates: newModelStates }
-            })
-
-            // If this model completed, stop its loop
-            if (result.completed) {
-              console.log(`Model ${modelId} completed`)
-              modelLoopRefs.current[modelId] = false
-              break
-            }
-
-            // Check if all models are complete
-            const allComplete = models.every((id) => {
-              const s = modelStatesRef.current[id]
-              return s?.outcome !== 'playing'
-            })
-
-            if (allComplete) {
-              console.log('All models complete, fetching final rankings')
-              battleLoopRef.current = false
-              Object.keys(modelLoopRefs.current).forEach((id) => {
-                modelLoopRefs.current[id] = false
-              })
-
-              // Fetch final rankings
-              const state = await getBattleState(battleId)
-              setBattleState((prev) => ({
-                ...prev,
-                status: 'complete',
-                battleMetadata: state.battleMetadata,
-              }))
               break
             }
 
@@ -234,7 +140,13 @@ export function ArenaContent({ battleId, modelStates, battleMetadata }: ArenaCon
       })
     }
 
-    // loadBattleState()
+    // Guard against React StrictMode double-invocation
+    if (battleLoopRef.current) {
+      console.log('Battle loop already started, skipping')
+      return
+    }
+    battleLoopRef.current = true
+
     startBattleLoop(battleId, Object.keys(modelStates))
 
     // Capture ref values for cleanup
@@ -265,6 +177,30 @@ export function ArenaContent({ battleId, modelStates, battleMetadata }: ArenaCon
   const config = battleState.battleMetadata?.config
   const rankings = battleState.battleMetadata?.rankings
 
+  // Convert rankings to full GameResult[] for RankingTable
+  const gameResults: GameResult[] | null = useMemo(() => {
+    if (!rankings || !config) return null
+    const totalSafe = config.rows * config.cols - config.mineCount
+    return rankings
+      .map((r) => {
+        const state = battleState.modelStates[r.modelId]
+        if (!state) return null
+        return {
+          modelId: r.modelId,
+          outcome: state.outcome,
+          score: r.score,
+          moves: state.moves,
+          durationMs: state.endTime
+            ? state.endTime - state.startTime
+            : Date.now() - state.startTime,
+          safeRevealed: state.safeRevealed,
+          totalSafe,
+          minesHit: state.minesHit,
+        }
+      })
+      .filter((r): r is GameResult => r !== null)
+  }, [rankings, config, battleState.modelStates])
+
   return (
     <main className="flex flex-col items-center p-8">
       <div className="w-full max-w-7xl">
@@ -290,13 +226,6 @@ export function ArenaContent({ battleId, modelStates, battleMetadata }: ArenaCon
           </Button>
         </div>
 
-        {/* Loading Status */}
-        {battleState.status === 'loading' && (
-          <div className="mb-8 text-center">
-            <Loader2 className="mx-auto h-8 w-8 animate-spin text-blue-400" />
-            <p className="mt-2 text-slate-400">Loading battle...</p>
-          </div>
-        )}
 
         {/* Error Status */}
         {battleState.status === 'error' && battleState.error && (
@@ -383,10 +312,9 @@ export function ArenaContent({ battleId, modelStates, battleMetadata }: ArenaCon
           </div>
         )}
 
-        {/* Rankings */}
-        {allCompleted && rankings && rankings.length > 0 && (
+        {allCompleted && gameResults && gameResults.length > 0 && (
           <>
-            <RankingTable results={rankings} />
+            <RankingTable results={gameResults} />
             {battleId && (
               <div className="mt-8 text-center">
                 <Button href={`/replay/${battleId}`} className="px-8 py-3">
@@ -397,14 +325,6 @@ export function ArenaContent({ battleId, modelStates, battleMetadata }: ArenaCon
           </>
         )}
 
-        {/* Empty state */}
-        {!battleId && battleState.status === 'idle' && (
-          <div className="mt-12 rounded-xl border border-slate-700/50 bg-slate-800/30 p-12 text-center">
-            <p className="text-lg text-slate-400">
-              No battle in progress. Start a new battle from the setup page.
-            </p>
-          </div>
-        )}
       </div>
     </main>
   )

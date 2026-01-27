@@ -10,6 +10,7 @@ export type PersistedModelState = {
   minesHit: 0 | 1
   outcome: GameOutcome
   startTime: number
+  endTime?: number
 }
 
 export async function getModelState(

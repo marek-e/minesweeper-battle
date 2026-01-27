@@ -1,5 +1,3 @@
-import { AuthorizedModel } from './battleConfig'
-
 export type GameOutcome = 'win' | 'loss' | 'stuck' | 'error' | 'playing'
 
 export type CellState = {
